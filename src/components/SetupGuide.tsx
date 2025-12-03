@@ -193,11 +193,14 @@ export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
                 </li>
                 <li className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-6 h-6 rounded-full bg-stone-800 flex items-center justify-center text-xs text-stone-300">2</span>
-                  <span>Double-click <strong className="text-stone-200">Robin Tools.app</strong></span>
+                  <div>
+                    <span><strong className="text-stone-200">Right-click</strong> Robin Tools.app → select <strong className="text-stone-200">"Open"</strong></span>
+                    <p className="text-xs text-stone-500 mt-1">First time only — macOS requires this for new apps</p>
+                  </div>
                 </li>
                 <li className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-6 h-6 rounded-full bg-stone-800 flex items-center justify-center text-xs text-stone-300">3</span>
-                  <span>Wait for setup to complete (first time takes a few minutes)</span>
+                  <span>Click "Open" when prompted, then wait for setup</span>
                 </li>
               </ol>
             </div>
