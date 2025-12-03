@@ -3,22 +3,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-interface SetupStep {
-  id: string;
-  title: string;
-  description: string;
-  command?: string;
-  check: () => Promise<boolean>;
-}
-
 interface SetupGuideProps {
   onComplete: () => void;
   apiUrl: string;
 }
 
 export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
+  const [showDevSetup, setShowDevSetup] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
-  const [stepStatus, setStepStatus] = useState<Record<string, 'pending' | 'checking' | 'complete' | 'error'>>({});
+  const [stepStatus, setStepStatus] = useState<Record<string, 'pending' | 'complete'>>({});
   const [copied, setCopied] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [backendHealth, setBackendHealth] = useState<{
@@ -50,40 +43,6 @@ export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
     return false;
   }, [apiUrl]);
 
-  // Define setup steps
-  const steps: SetupStep[] = [
-    {
-      id: 'clone',
-      title: 'Get the code',
-      description: 'Clone the repository to your machine',
-      command: 'git clone https://github.com/robin-guide/tools.git && cd tools',
-      check: async () => true, // Manual confirmation
-    },
-    {
-      id: 'python',
-      title: 'Set up Python environment',
-      description: 'Create a virtual environment and install dependencies',
-      command: 'cd backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt',
-      check: async () => true, // Manual confirmation
-    },
-    {
-      id: 'start',
-      title: 'Start the backend',
-      description: 'Run the FastAPI server (this will download the ML model on first run)',
-      command: 'cd backend && source venv/bin/activate && python main.py',
-      check: checkBackend,
-    },
-    {
-      id: 'ready',
-      title: 'Wait for model to load',
-      description: 'The ML model (~5GB) will download and load automatically',
-      check: async () => {
-        const connected = await checkBackend();
-        return connected && backendHealth?.modelLoaded === true;
-      },
-    },
-  ];
-
   // Poll for backend connection
   useEffect(() => {
     if (!isPolling) return;
@@ -91,20 +50,9 @@ export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
     const interval = setInterval(async () => {
       const connected = await checkBackend();
       
-      if (connected) {
-        setStepStatus(prev => ({ ...prev, start: 'complete' }));
-        
-        if (backendHealth?.modelLoaded) {
-          setStepStatus(prev => ({ ...prev, ready: 'complete' }));
-          setIsPolling(false);
-          
-          // Auto-complete after a moment
-          setTimeout(() => {
-            onComplete();
-          }, 1500);
-        } else if (backendHealth?.modelLoading) {
-          setCurrentStep(3); // Move to "loading model" step
-        }
+      if (connected && backendHealth?.modelLoaded) {
+        setIsPolling(false);
+        setTimeout(() => onComplete(), 1500);
       }
     }, 2000);
 
@@ -118,6 +66,8 @@ export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
         onComplete();
       }
     });
+    // Start polling immediately
+    setIsPolling(true);
   }, []);
 
   const copyCommand = (command: string, id: string) => {
@@ -128,71 +78,33 @@ export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
 
   const handleStepComplete = (stepId: string) => {
     setStepStatus(prev => ({ ...prev, [stepId]: 'complete' }));
-    
-    const stepIndex = steps.findIndex(s => s.id === stepId);
-    if (stepIndex < steps.length - 1) {
-      setCurrentStep(stepIndex + 1);
-    }
-    
-    // Start polling when they get to the "start" step
-    if (stepId === 'python') {
-      setIsPolling(true);
-    }
+    setCurrentStep(prev => prev + 1);
   };
 
-  const getStepIcon = (step: SetupStep, index: number) => {
-    const status = stepStatus[step.id];
-    
-    if (status === 'complete') {
-      return (
-        <motion.div
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center"
-        >
-          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-        </motion.div>
-      );
-    }
-    
-    if (status === 'checking' || (step.id === 'ready' && backendHealth?.modelLoading)) {
-      return (
-        <div className="w-8 h-8 rounded-full bg-violet-500 flex items-center justify-center">
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-          >
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </motion.div>
-        </div>
-      );
-    }
-    
-    if (index === currentStep) {
-      return (
-        <div className="w-8 h-8 rounded-full bg-stone-700 border-2 border-stone-500 flex items-center justify-center">
-          <span className="text-sm font-mono text-stone-300">{index + 1}</span>
-        </div>
-      );
-    }
-    
-    return (
-      <div className="w-8 h-8 rounded-full bg-stone-800 flex items-center justify-center">
-        <span className="text-sm font-mono text-stone-600">{index + 1}</span>
-      </div>
-    );
-  };
+  const devSteps = [
+    {
+      id: 'clone',
+      title: 'Clone the repo',
+      command: 'git clone https://github.com/robin-guide/tools.git && cd tools',
+    },
+    {
+      id: 'setup',
+      title: 'Set up Python',
+      command: 'cd backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt',
+    },
+    {
+      id: 'run',
+      title: 'Start the backend',
+      command: 'python main.py',
+    },
+  ];
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-2xl w-full"
+        className="max-w-lg w-full"
       >
         {/* Header */}
         <div className="text-center mb-10">
@@ -207,185 +119,212 @@ export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
           </motion.div>
           
           <h1 className="text-3xl font-display font-medium text-stone-100 mb-3">
-            Set Up AI Upscaler
+            One more step
           </h1>
-          <p className="text-stone-400 max-w-md mx-auto">
-            Run the backend locally to enable AI-powered upscaling. 
-            This requires Python and will use your GPU if available.
+          <p className="text-stone-400">
+            Download the app to run AI upscaling on your Mac.
           </p>
         </div>
 
         {/* Connection Status */}
-        <div className={`
-          mb-8 p-4 rounded-xl border flex items-center gap-4
-          ${backendHealth?.connected 
-            ? 'bg-emerald-500/10 border-emerald-500/30' 
-            : 'bg-stone-800/50 border-stone-700/50'
-          }
-        `}>
-          <div className={`
-            w-3 h-3 rounded-full
-            ${backendHealth?.connected 
-              ? 'bg-emerald-500' 
-              : 'bg-stone-600 animate-pulse'
-            }
-          `} />
-          <div className="flex-1">
-            <p className={`text-sm font-medium ${backendHealth?.connected ? 'text-emerald-400' : 'text-stone-400'}`}>
-              {backendHealth?.connected 
-                ? backendHealth.modelLoaded 
-                  ? `✓ Connected · ${backendHealth.device.toUpperCase()} · ML Ready`
-                  : backendHealth.modelLoading
-                    ? `Connected · Loading ML model...`
-                    : `Connected · Waiting for model`
-                : 'Backend not connected'
-              }
-            </p>
-            <p className="text-xs text-stone-500 mt-0.5">
-              {apiUrl}
-            </p>
-          </div>
-          {isPolling && !backendHealth?.connected && (
-            <span className="text-xs text-stone-500">Listening...</span>
-          )}
-        </div>
-
-        {/* Steps */}
-        <div className="space-y-4">
-          {steps.map((step, index) => {
-            const isActive = index === currentStep;
-            const isComplete = stepStatus[step.id] === 'complete';
-            const isPast = index < currentStep || isComplete;
-            
-            return (
-              <motion.div
-                key={step.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.1 }}
-                className={`
-                  p-4 rounded-xl border transition-all
-                  ${isActive 
-                    ? 'bg-stone-800/80 border-stone-600' 
-                    : isPast
-                      ? 'bg-stone-900/50 border-stone-800/50'
-                      : 'bg-stone-900/30 border-stone-800/30 opacity-50'
-                  }
-                `}
-              >
-                <div className="flex items-start gap-4">
-                  {getStepIcon(step, index)}
-                  
-                  <div className="flex-1 min-w-0">
-                    <h3 className={`font-medium ${isPast ? 'text-stone-500' : 'text-stone-200'}`}>
-                      {step.title}
-                    </h3>
-                    <p className="text-sm text-stone-500 mt-1">
-                      {step.description}
-                    </p>
-                    
-                    {/* Command block */}
-                    {step.command && isActive && !isComplete && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        className="mt-3"
-                      >
-                        <div className="relative group">
-                          <pre className="bg-stone-950 border border-stone-800 rounded-lg p-3 pr-12 overflow-x-auto">
-                            <code className="text-sm text-emerald-400 font-mono">
-                              {step.command}
-                            </code>
-                          </pre>
-                          <button
-                            onClick={() => copyCommand(step.command!, step.id)}
-                            className="absolute right-2 top-2 p-2 rounded-md bg-stone-800 hover:bg-stone-700 transition-colors"
-                            title="Copy command"
-                          >
-                            {copied === step.id ? (
-                              <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                            ) : (
-                              <svg className="w-4 h-4 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                              </svg>
-                            )}
-                          </button>
-                        </div>
-                        
-                        <button
-                          onClick={() => handleStepComplete(step.id)}
-                          className="mt-3 px-4 py-2 bg-stone-700 hover:bg-stone-600 rounded-lg text-sm text-stone-200 transition-colors"
-                        >
-                          I've done this →
-                        </button>
-                      </motion.div>
-                    )}
-                    
-                    {/* Loading state for model */}
-                    {step.id === 'ready' && isActive && backendHealth?.modelLoading && (
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="mt-3 p-3 bg-violet-500/10 border border-violet-500/30 rounded-lg"
-                      >
-                        <div className="flex items-center gap-3">
-                          <motion.div
-                            animate={{ rotate: 360 }}
-                            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-                          >
-                            <svg className="w-5 h-5 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                          </motion.div>
-                          <div>
-                            <p className="text-sm text-violet-300">Downloading ML model...</p>
-                            <p className="text-xs text-violet-400/60">This may take a few minutes on first run</p>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-
-        {/* Success state */}
         <AnimatePresence>
-          {backendHealth?.modelLoaded && (
+          {backendHealth?.connected && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mt-8 p-6 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center"
+              exit={{ opacity: 0 }}
+              className="mb-6 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30"
             >
-              <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-emerald-500 flex items-center justify-center">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 rounded-full bg-emerald-500" />
+                <div>
+                  <p className="text-sm font-medium text-emerald-400">
+                    {backendHealth.modelLoaded 
+                      ? '✓ Connected and ready!'
+                      : backendHealth.modelLoading
+                        ? 'Connected · Loading ML model...'
+                        : 'Connected · Initializing...'
+                    }
+                  </p>
+                  {backendHealth.modelLoaded && (
+                    <p className="text-xs text-emerald-400/70 mt-0.5">Redirecting to upscaler...</p>
+                  )}
+                </div>
               </div>
-              <h3 className="text-lg font-medium text-emerald-400 mb-2">All set!</h3>
-              <p className="text-sm text-emerald-400/70">Redirecting to upscaler...</p>
             </motion.div>
           )}
         </AnimatePresence>
 
+        {/* Main Download Section */}
+        {!backendHealth?.connected && (
+          <div className="space-y-4">
+            {/* Big Download Button */}
+            <motion.a
+              href="https://github.com/robin-guide/tools/releases/latest/download/Robin-Tools-macOS.zip"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="block w-full p-6 rounded-2xl bg-gradient-to-br from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                    <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-lg font-medium text-white">Download for Mac</p>
+                    <p className="text-sm text-white/70">macOS 10.15+</p>
+                  </div>
+                </div>
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              </div>
+            </motion.a>
+
+            {/* Instructions */}
+            <div className="p-5 rounded-xl bg-stone-900/50 border border-stone-800/50">
+              <p className="text-sm text-stone-300 mb-4">After downloading:</p>
+              <ol className="space-y-3 text-sm text-stone-400">
+                <li className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-stone-800 flex items-center justify-center text-xs text-stone-300">1</span>
+                  <span>Unzip the file</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-stone-800 flex items-center justify-center text-xs text-stone-300">2</span>
+                  <span>Double-click <strong className="text-stone-200">Robin Tools.app</strong></span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-stone-800 flex items-center justify-center text-xs text-stone-300">3</span>
+                  <span>Wait for setup to complete (first time takes a few minutes)</span>
+                </li>
+              </ol>
+            </div>
+
+            {/* Listening indicator */}
+            <div className="flex items-center justify-center gap-2 py-3">
+              <motion.div
+                animate={{ opacity: [0.3, 1, 0.3] }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className="w-2 h-2 rounded-full bg-stone-500"
+              />
+              <span className="text-xs text-stone-500">
+                This page will update when the app connects
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Developer Setup (Collapsible) */}
+        {!backendHealth?.connected && (
+          <div className="mt-8 pt-6 border-t border-stone-800/50">
+            <button
+              onClick={() => setShowDevSetup(!showDevSetup)}
+              className="w-full flex items-center justify-between text-stone-500 hover:text-stone-400 transition-colors"
+            >
+              <span className="text-sm">Prefer using Terminal?</span>
+              <motion.svg
+                animate={{ rotate: showDevSetup ? 180 : 0 }}
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </motion.svg>
+            </button>
+
+            <AnimatePresence>
+              {showDevSetup && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="pt-4 space-y-3">
+                    {devSteps.map((step, index) => {
+                      const isActive = index === currentStep;
+                      const isComplete = stepStatus[step.id] === 'complete';
+                      const isPast = index < currentStep;
+                      
+                      return (
+                        <div
+                          key={step.id}
+                          className={`p-3 rounded-lg border transition-all ${
+                            isActive 
+                              ? 'bg-stone-800/50 border-stone-700' 
+                              : isComplete || isPast
+                                ? 'bg-stone-900/30 border-stone-800/30'
+                                : 'bg-stone-900/20 border-stone-800/20 opacity-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${
+                              isComplete ? 'bg-emerald-500 text-white' : 'bg-stone-700 text-stone-400'
+                            }`}>
+                              {isComplete ? '✓' : index + 1}
+                            </div>
+                            <span className={`text-sm ${isComplete ? 'text-stone-500' : 'text-stone-300'}`}>
+                              {step.title}
+                            </span>
+                          </div>
+                          
+                          {isActive && (
+                            <div className="ml-8">
+                              <div className="relative">
+                                <pre className="bg-stone-950 border border-stone-800 rounded p-2 pr-10 overflow-x-auto">
+                                  <code className="text-xs text-emerald-400 font-mono">
+                                    {step.command}
+                                  </code>
+                                </pre>
+                                <button
+                                  onClick={() => copyCommand(step.command, step.id)}
+                                  className="absolute right-1 top-1 p-1.5 rounded bg-stone-800 hover:bg-stone-700 transition-colors"
+                                >
+                                  {copied === step.id ? (
+                                    <svg className="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="w-3 h-3 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                    </svg>
+                                  )}
+                                </button>
+                              </div>
+                              <button
+                                onClick={() => handleStepComplete(step.id)}
+                                className="mt-2 text-xs text-stone-400 hover:text-stone-300"
+                              >
+                                Done →
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
         {/* Help link */}
-        <p className="text-center text-sm text-stone-600 mt-8">
-          Having trouble?{' '}
+        <p className="text-center text-xs text-stone-600 mt-8">
+          Need help?{' '}
           <a 
-            href="https://github.com/robin-guide/tools#quick-start" 
+            href="https://github.com/robin-guide/tools/issues" 
             target="_blank"
             rel="noopener noreferrer"
-            className="text-stone-400 hover:text-stone-300 underline"
+            className="text-stone-500 hover:text-stone-400 underline"
           >
-            View full setup guide
+            Open an issue
           </a>
         </p>
       </motion.div>
     </div>
   );
 }
-
