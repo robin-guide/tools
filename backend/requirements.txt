@@ -1,0 +1,22 @@
+# Core dependencies
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# ML dependencies for Qwen-Image-Edit
+torch>=2.1.0
+torchvision>=0.16.0
+transformers>=4.45.0
+diffusers>=0.31.0
+accelerate>=0.26.0
+safetensors>=0.4.0
+pillow>=10.0.0
+sentencepiece>=0.1.99
+protobuf>=4.25.0
+
+# PEFT for LoRA support
+peft>=0.7.0
+
+# Utilities
+pydantic>=2.0.0
+aiofiles>=23.2.0
