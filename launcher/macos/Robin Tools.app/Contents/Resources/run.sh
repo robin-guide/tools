@@ -1,22 +1,5 @@
 #!/bin/bash
 
-# Robin Tools macOS App Launcher
-# Opens Terminal to run the setup with visible output
-
-# Get the directory where this script is located
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-RESOURCES_DIR="$SCRIPT_DIR/../Resources"
-
-# Path to the command script (bundled with the app)
-COMMAND_SCRIPT="$RESOURCES_DIR/run.sh"
-
-# If the bundled script doesn't exist, use the standalone one or download
-if [ ! -f "$COMMAND_SCRIPT" ]; then
-    # Create a temporary script
-    COMMAND_SCRIPT="/tmp/robin-tools-launcher.sh"
-    cat > "$COMMAND_SCRIPT" << 'SCRIPT'
-#!/bin/bash
-
 # Robin Tools Launcher for macOS
 
 # Colors
@@ -178,14 +161,4 @@ else
     read -p "  Press Enter to exit..."
     exit 1
 fi
-SCRIPT
-    chmod +x "$COMMAND_SCRIPT"
-fi
 
-# Open Terminal and run the script
-osascript << EOF
-tell application "Terminal"
-    activate
-    do script "clear && '$COMMAND_SCRIPT'"
-end tell
-EOF
