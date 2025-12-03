@@ -1,0 +1,128 @@
+#!/bin/bash
+
+# Robin Tools macOS App Launcher
+# This script runs inside the .app bundle
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+RESOURCES_DIR="$SCRIPT_DIR/../Resources"
+
+# Configuration
+INSTALL_DIR="$HOME/.robin-tools"
+REPO_URL="https://github.com/robin-guide/tools.git"
+FRONTEND_URL="https://upscaler-rho.vercel.app/upscaler"
+BACKEND_PORT=8000
+
+# Function to show notification
+notify() {
+    osascript -e "display notification \"$1\" with title \"Robin Tools\""
+}
+
+# Function to show dialog
+dialog() {
+    osascript -e "display dialog \"$1\" with title \"Robin Tools\" buttons {\"OK\"} default button \"OK\" with icon note"
+}
+
+# Function to show error dialog
+error_dialog() {
+    osascript -e "display dialog \"$1\" with title \"Robin Tools\" buttons {\"OK\"} default button \"OK\" with icon stop"
+}
+
+# Function to check if backend is running
+backend_running() {
+    curl -s "http://localhost:$BACKEND_PORT/health" >/dev/null 2>&1
+}
+
+# Function to wait for backend with progress
+wait_for_backend() {
+    local max_attempts=120
+    local attempt=0
+    while [ $attempt -lt $max_attempts ]; do
+        if backend_running; then
+            return 0
+        fi
+        sleep 1
+        attempt=$((attempt + 1))
+    done
+    return 1
+}
+
+# Check if backend is already running
+if backend_running; then
+    notify "Backend already running - opening browser"
+    open "$FRONTEND_URL"
+    exit 0
+fi
+
+# Check for Python
+if ! command -v python3 &> /dev/null; then
+    error_dialog "Python 3 is required but not installed.
+
+Please install Python from:
+https://www.python.org/downloads/
+
+Or via Homebrew:
+brew install python"
+    exit 1
+fi
+
+# Check for Git
+if ! command -v git &> /dev/null; then
+    error_dialog "Git is required but not installed.
+
+Please install Xcode Command Line Tools:
+xcode-select --install"
+    exit 1
+fi
+
+# Show starting notification
+notify "Starting Robin Tools..."
+
+# Download or update
+if [ -d "$INSTALL_DIR" ]; then
+    cd "$INSTALL_DIR"
+    git pull origin main --quiet 2>/dev/null || true
+else
+    notify "Downloading Robin Tools (first time setup)..."
+    git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" --quiet
+fi
+
+cd "$INSTALL_DIR/backend"
+
+# Set up Python environment
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+fi
+
+source venv/bin/activate
+
+# Install dependencies if needed
+if ! pip show diffusers >/dev/null 2>&1; then
+    notify "Installing dependencies (this may take a few minutes)..."
+    pip install --quiet --upgrade pip
+    pip install --quiet -r requirements.txt
+fi
+
+# Start backend
+notify "Starting AI backend..."
+python main.py &
+BACKEND_PID=$!
+
+# Save PID for cleanup
+echo $BACKEND_PID > "$INSTALL_DIR/.backend_pid"
+
+# Wait for backend
+if wait_for_backend; then
+    notify "Robin Tools is ready!"
+    open "$FRONTEND_URL"
+    
+    # Keep app running (it will show in dock)
+    # The backend process keeps it alive
+    wait $BACKEND_PID
+else
+    error_dialog "Failed to start the backend server.
+
+Please try running the terminal launcher instead, or check the GitHub issues for help."
+    kill $BACKEND_PID 2>/dev/null
+    exit 1
+fi
+

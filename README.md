@@ -1,93 +1,88 @@
-# 🖼️ AI Image Upscaler
+# 🐦 Robin Tools
 
-A local AI-powered image upscaler with real-time progress streaming. Uses Stable Diffusion x4 Upscaler for ML-enhanced results with Lanczos fallback.
+AI-powered creative tools that run locally on your machine. No cloud uploads, no subscriptions.
 
-![MPS · ML Ready](https://img.shields.io/badge/MPS-ML%20Ready-green) ![Next.js](https://img.shields.io/badge/Next.js-15-black) ![FastAPI](https://img.shields.io/badge/FastAPI-Python-blue)
+![Open Source](https://img.shields.io/badge/Open%20Source-Local%20First-green) ![Next.js](https://img.shields.io/badge/Next.js-15-black) ![FastAPI](https://img.shields.io/badge/FastAPI-Python-blue)
 
-## Features
+## 🚀 Quick Start (No Terminal Required!)
 
-- **AI-Powered Upscaling** - Stable Diffusion x4 Upscaler with real-time progress
-- **Multi-Device Support** - CUDA, Apple Silicon (MPS), and CPU fallback
-- **Real-time Streaming** - Server-Sent Events for live progress updates
-- **Compare Mode** - Side-by-side before/after comparison with slider
-- **Adjustable Parameters**:
-  - **Scale** - 2×, 3×, or 4× output size
-  - **Enhance** - Controls inference steps and guidance (quality)
-  - **Creativity** - Controls noise level (how much AI reimagines)
+### macOS Users
 
-## Tech Stack
+1. **[Download Robin Tools for macOS](https://github.com/robin-guide/tools/releases/latest/download/Robin-Tools-macOS.zip)**
+2. Unzip the file
+3. Double-click **"Robin Tools.app"**
+4. That's it! The app handles everything automatically.
 
-### Frontend
-- Next.js 15 with App Router
-- TypeScript
-- Tailwind CSS
-- Framer Motion
+> **Note:** On first launch, the app will download dependencies (~5GB for the ML model). This takes a few minutes.
 
-### Backend
-- FastAPI (Python)
-- Stable Diffusion x4 Upscaler (Hugging Face Diffusers)
-- Server-Sent Events for streaming
+### Or Use the Web Interface
 
-## Quick Start
+Visit **[upscaler-rho.vercel.app](https://upscaler-rho.vercel.app)** and follow the guided setup.
 
-### Option 1: Use the Hosted Frontend (Easiest)
+---
 
-1. Visit **[upscaler.robin.guide](https://tools.vercel.app)** (or your Vercel URL)
-2. Follow the setup guide to run the backend locally
-3. Or use the one-liner:
+## 🛠️ Available Tools
+
+### 🖼️ Image Upscaler
+AI-powered image upscaling with real-time progress. Uses Stable Diffusion x4 Upscaler for ML-enhanced results.
+
+**Features:**
+- **AI-Powered Upscaling** - Real-time progress streaming
+- **Multi-Device Support** - NVIDIA CUDA, Apple Silicon (MPS), and CPU
+- **Compare Mode** - Side-by-side before/after comparison
+- **Adjustable Parameters** - Scale (2×-4×), Enhancement, Creativity
+
+### 🔜 Background Remover
+*Coming soon*
+
+### 🔜 Colorizer
+*Coming soon*
+
+---
+
+## 💻 Manual Setup (For Developers)
+
+### Prerequisites
+- Python 3.10+
+- Node.js 18+ (if running frontend locally)
+- GPU recommended (NVIDIA CUDA or Apple Silicon MPS)
+
+### Option 1: One-Liner Setup
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/robin-guide/tools/main/scripts/setup.sh | bash
 ```
 
-### Option 2: Run Everything Locally
-
-#### Prerequisites
-- Node.js 18+
-- Python 3.10+
-- GPU recommended (NVIDIA CUDA or Apple Silicon MPS)
-
-#### 1. Clone & Install Frontend
+### Option 2: Step by Step
 
 ```bash
+# Clone
 git clone https://github.com/robin-guide/tools.git
 cd tools
-npm install
-```
 
-#### 2. Set Up Backend
-
-```bash
+# Backend setup
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-#### 3. Run Both Services
-
-**Terminal 1 - Backend:**
-```bash
-cd backend
+python3 -m venv venv
 source venv/bin/activate
+pip install -r requirements.txt
+
+# Start backend
 python main.py
 ```
 
-**Terminal 2 - Frontend:**
-```bash
-npm run dev
-```
+Then open [upscaler-rho.vercel.app/upscaler](https://upscaler-rho.vercel.app/upscaler)
 
-Open [http://localhost:3000](http://localhost:3000)
+---
 
-## API Endpoints
+## 📚 API Reference
+
+### Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/health` | GET | Server health and ML model status |
 | `/upscale` | POST | Upscale image (non-streaming) |
 | `/upscale/stream` | POST | Upscale with SSE progress streaming |
-| `/load-model` | POST | Manually trigger ML model loading |
 
 ### Upscale Parameters
 
@@ -95,78 +90,76 @@ Open [http://localhost:3000](http://localhost:3000)
 {
   image: File,           // Image file to upscale
   scale: 2 | 3 | 4,      // Output scale factor
-  denoise: 0.0 - 1.0,    // Enhancement strength (steps + guidance)
-  creativity: 0.0 - 1.0, // AI reimagining level (noise_level)
+  denoise: 0.0 - 1.0,    // Enhancement strength
+  creativity: 0.0 - 1.0, // AI reimagining level
   use_ml: boolean        // Use ML or force Lanczos
 }
 ```
 
-## Hardware Requirements
+---
+
+## 🔧 Hardware Requirements
 
 | Device | Performance | Notes |
 |--------|-------------|-------|
-| NVIDIA GPU (8GB+ VRAM) | Best | Full float16, preview images |
-| Apple Silicon (M1/M2/M3) | Good | Float32, no previews (memory) |
+| NVIDIA GPU (8GB+ VRAM) | Best | Full float16 support |
+| Apple Silicon (M1/M2/M3) | Good | Float32, optimized for MPS |
 | CPU | Slow | Falls back to Lanczos only |
 
-## Architecture
+---
+
+## 🏗️ Architecture
 
 ```
-┌─────────────────┐     SSE Stream      ┌─────────────────┐
-│   Next.js UI    │ ◄─────────────────► │  FastAPI Server │
+┌─────────────────┐                      ┌─────────────────┐
+│   Robin Tools   │     SSE Stream       │  FastAPI Server │
+│   (Next.js)     │ ◄──────────────────► │  (Python)       │
 │                 │                      │                 │
-│ - Drop zone     │     /upscale/stream  │ - SD Upscaler   │
-│ - Progress bar  │                      │ - Lanczos       │
-│ - Compare view  │                      │ - Device detect │
+│  • Tool gallery │                      │  • ML inference │
+│  • Real-time UI │                      │  • Device detect│
+│  • Compare view │                      │  • Progress SSE │
 └─────────────────┘                      └─────────────────┘
+        │                                        │
+        │ Hosted on Vercel                       │ Runs locally
+        │ (no data leaves your machine)          │ on your GPU
 ```
 
-## Configuration
+---
 
-### Environment Variables
-
-**Frontend** (`.env.local`):
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-**Backend** uses auto-detection for device/dtype.
-
-## Development
-
-### Project Structure
+## 📂 Project Structure
 
 ```
-upscaler/
-├── src/
-│   ├── app/
-│   │   ├── page.tsx          # Main UI
-│   │   └── globals.css       # Styles
-│   ├── components/
-│   │   ├── ImageViewer.tsx   # Image display & compare
-│   │   └── ...
-│   ├── hooks/
-│   │   └── useUpscaler.ts    # API hook with SSE
-│   └── types/
-│       └── index.ts          # TypeScript interfaces
+robin-tools/
+├── src/app/
+│   ├── page.tsx              # Tools gallery
+│   └── upscaler/page.tsx     # Upscaler tool
 ├── backend/
 │   ├── main.py               # FastAPI server
-│   └── requirements.txt      # Python deps
-└── README.md
+│   └── requirements.txt
+├── launcher/
+│   └── macos/                # macOS app bundle
+└── scripts/
+    └── setup.sh              # One-liner installer
 ```
 
-### Key Design Decisions
+---
 
-1. **SSE over WebSockets** - Simpler for one-way progress streaming
-2. **Float32 on MPS** - Float16 produces NaN/black images on Apple Silicon
-3. **192px input limit on MPS** - Prevents OOM crashes
-4. **Final Lanczos resize** - Ensures output matches user's requested scale
+## 🤝 Contributing
 
-## License
+1. Fork the repo
+2. Create a feature branch
+3. Make your changes
+4. Submit a PR
+
+---
+
+## 📜 License
 
 MIT
 
-## Credits
+---
+
+## 🙏 Credits
 
 - [Stable Diffusion x4 Upscaler](https://huggingface.co/stabilityai/stable-diffusion-x4-upscaler) by Stability AI
 - Built by [Robin](https://robin.guide)
