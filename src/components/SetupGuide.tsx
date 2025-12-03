@@ -203,6 +203,26 @@ export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
                   <span>Click "Open" when prompted, then wait for setup</span>
                 </li>
               </ol>
+              
+              {/* macOS Security Help */}
+              <details className="mt-4 pt-4 border-t border-stone-800/50">
+                <summary className="text-xs text-amber-500/80 cursor-pointer hover:text-amber-400 flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  Mac showing a security warning?
+                </summary>
+                <div className="mt-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-stone-400 space-y-2">
+                  <p className="text-amber-400/90 font-medium">If "Open" doesn't appear when you right-click:</p>
+                  <ol className="space-y-1.5 ml-4 list-decimal">
+                    <li>Try to open the app normally (let it show the warning)</li>
+                    <li>Open <strong className="text-stone-300">System Settings</strong> → <strong className="text-stone-300">Privacy & Security</strong></li>
+                    <li>Scroll down to find <em>"Robin Tools was blocked"</em></li>
+                    <li>Click <strong className="text-stone-300">"Open Anyway"</strong></li>
+                  </ol>
+                  <p className="text-stone-500 pt-1">This is a one-time step. The app will open normally after.</p>
+                </div>
+              </details>
             </div>
 
             {/* Listening indicator */}
