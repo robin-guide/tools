@@ -3,8 +3,11 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ImageViewer from '@/components/ImageViewer';
+import SetupGuide from '@/components/SetupGuide';
 import { useUpscaler } from '@/hooks/useUpscaler';
 import { ImageData, UpscaleParams, HealthResponse } from '@/types';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function Home() {
   const [image, setImage] = useState<ImageData | null>(null);
@@ -15,24 +18,44 @@ export default function Home() {
     useMl: true,
   });
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [showSetup, setShowSetup] = useState(true);
+  const [initialCheckDone, setInitialCheckDone] = useState(false);
   
   const { status, error, progress, result, upscale, reset, cancel, checkHealth } = useUpscaler();
 
-  // Poll health status to track ML model loading
+  // Initial backend check
   useEffect(() => {
-    checkHealth().then(setHealth);
+    checkHealth().then((h) => {
+      setHealth(h);
+      // If backend is connected and model is loaded, skip setup
+      if (h?.status === 'healthy') {
+        setShowSetup(false);
+      }
+      setInitialCheckDone(true);
+    });
+  }, [checkHealth]);
+
+  // Poll health status when not in setup mode
+  useEffect(() => {
+    if (showSetup) return;
     
     const interval = setInterval(() => {
       checkHealth().then((newHealth) => {
         setHealth(newHealth);
-        if (newHealth?.model_loaded || (newHealth && !newHealth.model_loading)) {
-          clearInterval(interval);
+        // If backend disconnects, show setup again
+        if (!newHealth) {
+          setShowSetup(true);
         }
       });
-    }, 3000);
+    }, 5000);
     
     return () => clearInterval(interval);
-  }, [checkHealth]);
+  }, [checkHealth, showSetup]);
+
+  const handleSetupComplete = () => {
+    setShowSetup(false);
+    checkHealth().then(setHealth);
+  };
 
   const handleImageSelect = (newImage: ImageData) => {
     if (image?.preview) {
@@ -57,6 +80,41 @@ export default function Home() {
 
   const isProcessing = status === 'processing';
 
+  // Show loading state while checking
+  if (!initialCheckDone) {
+    return (
+      <main className="min-h-screen grain-overlay flex items-center justify-center">
+        <div className="fixed inset-0 bg-gradient-to-b from-stone-950 via-stone-950 to-stone-900 -z-10" />
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="text-center"
+        >
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+            className="w-8 h-8 mx-auto mb-4"
+          >
+            <svg className="w-8 h-8 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </motion.div>
+          <p className="text-stone-500 text-sm">Checking backend...</p>
+        </motion.div>
+      </main>
+    );
+  }
+
+  // Show setup guide if backend not connected
+  if (showSetup) {
+    return (
+      <main className="min-h-screen grain-overlay">
+        <div className="fixed inset-0 bg-gradient-to-b from-stone-950 via-stone-950 to-stone-900 -z-10" />
+        <SetupGuide onComplete={handleSetupComplete} apiUrl={API_URL} />
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen grain-overlay">
       <div className="fixed inset-0 bg-gradient-to-b from-stone-950 via-stone-950 to-stone-900 -z-10" />
@@ -76,11 +134,15 @@ export default function Home() {
           
           <div className="flex items-center gap-4">
             {/* Health indicator */}
-            <div className={`
-              flex items-center gap-2 px-3 py-1.5 rounded-full text-xs
-              bg-stone-800/50 
-              ${health?.status === 'healthy' ? 'text-stone-400' : 'text-stone-500'}
-            `}>
+            <button
+              onClick={() => setShowSetup(true)}
+              className={`
+                flex items-center gap-2 px-3 py-1.5 rounded-full text-xs
+                bg-stone-800/50 hover:bg-stone-800 transition-colors
+                ${health?.status === 'healthy' ? 'text-stone-400' : 'text-stone-500'}
+              `}
+              title="Backend settings"
+            >
               <div className={`w-1.5 h-1.5 rounded-full ${
                 health?.status === 'healthy' 
                   ? health.model_loaded 
@@ -88,7 +150,7 @@ export default function Home() {
                     : health.model_loading 
                       ? 'bg-amber-500 animate-pulse' 
                       : 'bg-stone-500'
-                  : 'bg-stone-600 animate-pulse'
+                  : 'bg-red-500 animate-pulse'
               }`} />
               {health?.status === 'healthy' ? (
                 <>
@@ -96,13 +158,13 @@ export default function Home() {
                   {health.model_loaded 
                     ? ' ML Ready' 
                     : health.model_loading 
-                      ? ' Loading model...' 
+                      ? ' Loading...' 
                       : ' Lanczos'}
                 </>
               ) : (
-                'Connecting...'
+                'Disconnected'
               )}
-            </div>
+            </button>
 
             {/* Clear button */}
             {image && (
@@ -170,85 +232,85 @@ export default function Home() {
               </div>
             )}
 
-                {/* Enhancement Slider */}
-                <div className="flex items-center gap-3 flex-1 min-w-[160px]">
-                  <span className="text-sm text-stone-500 whitespace-nowrap">Enhance</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={params.denoise * 100}
-                    onChange={(e) => setParams({ ...params, denoise: parseInt(e.target.value) / 100 })}
-                    disabled={isProcessing}
-                    className={`
-                      flex-1 h-2 rounded-full appearance-none cursor-pointer bg-stone-800
-                      [&::-webkit-slider-thumb]:appearance-none
-                      [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
-                      [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-stone-400
-                      [&::-webkit-slider-thumb]:hover:bg-stone-300 [&::-webkit-slider-thumb]:transition-colors
-                      ${isProcessing ? 'opacity-50' : ''}
-                    `}
-                  />
-                  <span className="text-xs font-mono text-stone-600 w-10 text-right">
-                    {Math.round(params.denoise * 100)}%
-                  </span>
-                </div>
+            {/* Enhancement Slider */}
+            <div className="flex items-center gap-3 flex-1 min-w-[160px]">
+              <span className="text-sm text-stone-500 whitespace-nowrap">Enhance</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={params.denoise * 100}
+                onChange={(e) => setParams({ ...params, denoise: parseInt(e.target.value) / 100 })}
+                disabled={isProcessing}
+                className={`
+                  flex-1 h-2 rounded-full appearance-none cursor-pointer bg-stone-800
+                  [&::-webkit-slider-thumb]:appearance-none
+                  [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
+                  [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-stone-400
+                  [&::-webkit-slider-thumb]:hover:bg-stone-300 [&::-webkit-slider-thumb]:transition-colors
+                  ${isProcessing ? 'opacity-50' : ''}
+                `}
+              />
+              <span className="text-xs font-mono text-stone-600 w-10 text-right">
+                {Math.round(params.denoise * 100)}%
+              </span>
+            </div>
 
-                {/* Creativity Slider */}
-                <div className="flex items-center gap-3 flex-1 min-w-[160px]">
-                  <span className="text-sm text-stone-500 whitespace-nowrap">Creativity</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={params.creativity * 100}
-                    onChange={(e) => setParams({ ...params, creativity: parseInt(e.target.value) / 100 })}
-                    disabled={isProcessing}
-                    className={`
-                      flex-1 h-2 rounded-full appearance-none cursor-pointer bg-stone-800
-                      [&::-webkit-slider-thumb]:appearance-none
-                      [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
-                      [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-violet-400
-                      [&::-webkit-slider-thumb]:hover:bg-violet-300 [&::-webkit-slider-thumb]:transition-colors
-                      ${isProcessing ? 'opacity-50' : ''}
-                    `}
-                  />
-                  <span className="text-xs font-mono text-stone-600 w-10 text-right">
-                    {Math.round(params.creativity * 100)}%
-                  </span>
-                </div>
+            {/* Creativity Slider */}
+            <div className="flex items-center gap-3 flex-1 min-w-[160px]">
+              <span className="text-sm text-stone-500 whitespace-nowrap">Creativity</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={params.creativity * 100}
+                onChange={(e) => setParams({ ...params, creativity: parseInt(e.target.value) / 100 })}
+                disabled={isProcessing}
+                className={`
+                  flex-1 h-2 rounded-full appearance-none cursor-pointer bg-stone-800
+                  [&::-webkit-slider-thumb]:appearance-none
+                  [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
+                  [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-violet-400
+                  [&::-webkit-slider-thumb]:hover:bg-violet-300 [&::-webkit-slider-thumb]:transition-colors
+                  ${isProcessing ? 'opacity-50' : ''}
+                `}
+              />
+              <span className="text-xs font-mono text-stone-600 w-10 text-right">
+                {Math.round(params.creativity * 100)}%
+              </span>
+            </div>
 
-                {/* Upscale / Cancel Button */}
-                {isProcessing ? (
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={cancel}
-                    className="px-8 py-3 rounded-lg font-medium flex items-center gap-3 transition-all bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                    Cancel
-                  </motion.button>
-                ) : (
-                  <motion.button
-                    whileHover={image ? { scale: 1.02 } : {}}
-                    whileTap={image ? { scale: 0.98 } : {}}
-                    onClick={handleUpscale}
-                    disabled={!image}
-                    className={`
-                      px-8 py-3 rounded-lg font-medium flex items-center gap-3 transition-all
-                      ${!image
-                        ? 'bg-stone-800/50 text-stone-600 cursor-not-allowed'
-                        : 'bg-stone-200 text-stone-900 hover:bg-white'
-                      }
-                    `}
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                    </svg>
-                    Upscale
+            {/* Upscale / Cancel Button */}
+            {isProcessing ? (
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={cancel}
+                className="px-8 py-3 rounded-lg font-medium flex items-center gap-3 transition-all bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Cancel
+              </motion.button>
+            ) : (
+              <motion.button
+                whileHover={image ? { scale: 1.02 } : {}}
+                whileTap={image ? { scale: 0.98 } : {}}
+                onClick={handleUpscale}
+                disabled={!image}
+                className={`
+                  px-8 py-3 rounded-lg font-medium flex items-center gap-3 transition-all
+                  ${!image
+                    ? 'bg-stone-800/50 text-stone-600 cursor-not-allowed'
+                    : 'bg-stone-200 text-stone-900 hover:bg-white'
+                  }
+                `}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+                Upscale
               </motion.button>
             )}
           </motion.div>

@@ -30,19 +30,32 @@ A local AI-powered image upscaler with real-time progress streaming. Uses Stable
 
 ## Quick Start
 
-### Prerequisites
+### Option 1: Use the Hosted Frontend (Easiest)
+
+1. Visit **[upscaler.robin.guide](https://tools.vercel.app)** (or your Vercel URL)
+2. Follow the setup guide to run the backend locally
+3. Or use the one-liner:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/robin-guide/tools/main/scripts/setup.sh | bash
+```
+
+### Option 2: Run Everything Locally
+
+#### Prerequisites
 - Node.js 18+
 - Python 3.10+
 - GPU recommended (NVIDIA CUDA or Apple Silicon MPS)
 
-### 1. Clone & Install Frontend
+#### 1. Clone & Install Frontend
 
 ```bash
-cd upscaler
+git clone https://github.com/robin-guide/tools.git
+cd tools
 npm install
 ```
 
-### 2. Set Up Backend
+#### 2. Set Up Backend
 
 ```bash
 cd backend
@@ -51,7 +64,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 3. Run Both Services
+#### 3. Run Both Services
 
 **Terminal 1 - Backend:**
 ```bash
