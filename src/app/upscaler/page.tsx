@@ -146,9 +146,13 @@ export default function UpscalerPage() {
             <button
               onClick={() => setShowSetup(true)}
               className={`
-                flex items-center gap-2 px-3 py-1.5 rounded-full text-xs
-                bg-stone-800/50 hover:bg-stone-800 transition-colors
-                ${health?.status === 'healthy' ? 'text-stone-400' : 'text-stone-500'}
+                flex items-center gap-2 px-3 py-1.5 rounded-full text-xs transition-colors
+                ${health?.status === 'healthy' 
+                  ? health.model_loaded 
+                    ? 'bg-stone-800/50 hover:bg-stone-800 text-stone-400'
+                    : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30'
+                  : 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30'
+                }
               `}
               title="Backend settings"
             >
@@ -158,7 +162,7 @@ export default function UpscalerPage() {
                     ? 'bg-emerald-500' 
                     : health.model_loading 
                       ? 'bg-amber-500 animate-pulse' 
-                      : 'bg-stone-500'
+                      : 'bg-amber-500'
                   : 'bg-red-500 animate-pulse'
               }`} />
               {health?.status === 'healthy' ? (
@@ -167,11 +171,11 @@ export default function UpscalerPage() {
                   {health.model_loaded 
                     ? ' ML Ready' 
                     : health.model_loading 
-                      ? ' Loading...' 
-                      : ' Lanczos'}
+                      ? ' Loading ML...' 
+                      : ' No AI (Lanczos only)'}
                 </>
               ) : (
-                'Disconnected'
+                'Not connected'
               )}
             </button>
 
@@ -186,6 +190,44 @@ export default function UpscalerPage() {
             )}
           </div>
         </motion.header>
+
+        {/* ML Not Available Warning */}
+        <AnimatePresence>
+          {health?.status === 'healthy' && !health.model_loaded && !health.model_loading && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30"
+            >
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-medium text-amber-400">Using basic upscaling (Lanczos)</h3>
+                  <p className="text-xs text-amber-400/70 mt-1">
+                    AI upscaling is not available. The ML model may have failed to load or your system doesn't have enough resources.
+                  </p>
+                  <button
+                    onClick={() => setShowSetup(true)}
+                    className="mt-3 text-xs text-amber-400 hover:text-amber-300 underline underline-offset-2"
+                  >
+                    View setup guide →
+                  </button>
+                </div>
+                <button
+                  onClick={() => setShowSetup(true)}
+                  className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-xs text-amber-400 transition-colors"
+                >
+                  Fix this
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Main Content */}
         <div className="space-y-6">
