@@ -22,8 +22,8 @@ const jetbrains = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Upscaler',
-  description: 'Local AI-powered image upscaling',
+  title: 'Robin Tools',
+  description: 'AI-powered creative tools that run locally',
 }
 
 export default function RootLayout({
