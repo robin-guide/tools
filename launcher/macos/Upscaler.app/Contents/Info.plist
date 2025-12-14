@@ -4,26 +4,26 @@
 <dict>
     <key>CFBundleExecutable</key>
     <string>launcher</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
-    <string>guide.robin.tools</string>
+    <string>guide.robin.upscaler</string>
     <key>CFBundleName</key>
-    <string>Robin Tools</string>
+    <string>Upscaler</string>
     <key>CFBundleDisplayName</key>
-    <string>Robin Tools</string>
+    <string>Upscaler</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>10.15</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSUIElement</key>
     <false/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
 </dict>
 </plist>
 

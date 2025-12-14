@@ -78,3 +78,10 @@ echo ""
 # Start the server
 python main.py
 
+
+
+
+
+
+
+

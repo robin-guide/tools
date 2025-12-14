@@ -160,7 +160,7 @@ export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
           <div className="space-y-4">
             {/* Big Download Button */}
             <motion.a
-              href="https://github.com/robin-guide/tools/releases/latest/download/Robin-Tools-macOS.zip"
+              href="https://github.com/robin-guide/tools/releases/latest/download/Upscaler-macOS.zip"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               className="block w-full p-6 rounded-2xl bg-gradient-to-br from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 transition-all"
@@ -194,7 +194,7 @@ export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
                 <li className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-6 h-6 rounded-full bg-stone-800 flex items-center justify-center text-xs text-stone-300">2</span>
                   <div>
-                    <span><strong className="text-stone-200">Right-click</strong> Robin Tools.app → select <strong className="text-stone-200">"Open"</strong></span>
+                    <span><strong className="text-stone-200">Right-click</strong> Upscaler.app → select <strong className="text-stone-200">"Open"</strong></span>
                     <p className="text-xs text-stone-500 mt-1">First time only — macOS requires this for new apps</p>
                   </div>
                 </li>
@@ -217,7 +217,7 @@ export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
                   <ol className="space-y-1.5 ml-4 list-decimal">
                     <li>Try to open the app normally (let it show the warning)</li>
                     <li>Open <strong className="text-stone-300">System Settings</strong> → <strong className="text-stone-300">Privacy & Security</strong></li>
-                    <li>Scroll down to find <em>"Robin Tools was blocked"</em></li>
+                    <li>Scroll down to find <em>"Upscaler was blocked"</em></li>
                     <li>Click <strong className="text-stone-300">"Open Anyway"</strong></li>
                   </ol>
                   <p className="text-stone-500 pt-1">This is a one-time step. The app will open normally after.</p>
