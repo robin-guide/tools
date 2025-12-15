@@ -1,0 +1,12 @@
+# Models (too large for git - download on first run)
+seedvr2/models/SEEDVR2/*.safetensors
+seedvr2/models/
+
+# Test files
+response.json
+test_*.png
+
+# Python cache
+__pycache__/
+*.pyc
+venv/

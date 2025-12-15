@@ -169,7 +169,9 @@ export default function UpscalerPage() {
                 <>
                   {health.gpu_available ? health.device.toUpperCase() : 'CPU'} · 
                   {health.model_loaded 
-                    ? ' ML Ready' 
+                    ? health.model_type?.startsWith('seedvr2') 
+                      ? ` SeedVR2 ${health.model_type.split('_')[1]?.toUpperCase() || ''}` 
+                      : ' SD Upscaler'
                     : health.model_loading 
                       ? ' Loading ML...' 
                       : ' No AI (Lanczos only)'}

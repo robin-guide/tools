@@ -1,15 +1,20 @@
 """
-Qwen-Edit Upscaler Backend
+Upscaler Backend
 FastAPI server for AI-powered image upscaling
-Uses Stable Diffusion x4 Upscaler with real-time progress streaming
+Supports SeedVR2 (best quality) and SD Upscaler with real-time progress streaming
 """
 
 import io
+import os
+import sys
 import json
 import base64
 import logging
 import asyncio
-from typing import Optional, Tuple
+import tempfile
+import subprocess
+from pathlib import Path
+from typing import Optional, Tuple, Literal
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, Form, Request
@@ -22,14 +27,20 @@ from PIL import Image, ImageEnhance
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Paths
+BACKEND_DIR = Path(__file__).parent
+SEEDVR2_DIR = BACKEND_DIR / "seedvr2"
+SEEDVR2_MODELS_DIR = SEEDVR2_DIR / "models" / "SEEDVR2"
+
 # Global state for ML model
 ml_state = {
     "pipeline": None,
-    "pipeline_type": None,
+    "pipeline_type": None,  # "seedvr2_3b", "seedvr2_7b", "sd_upscaler", "ldsr"
     "device": "cpu",
     "available": False,
     "loading": False,
-    "error": None
+    "error": None,
+    "seedvr2_available": False,
 }
 
 
@@ -46,6 +57,19 @@ def get_device() -> str:
     return "cpu"
 
 
+def check_seedvr2_models() -> Tuple[bool, Optional[str]]:
+    """Check if SeedVR2 models are available."""
+    dit_model = SEEDVR2_MODELS_DIR / "seedvr2_ema_3b_fp16.safetensors"
+    vae_model = SEEDVR2_MODELS_DIR / "ema_vae_fp16.safetensors"
+    
+    if dit_model.exists() and vae_model.exists():
+        # Determine model size
+        if (SEEDVR2_MODELS_DIR / "seedvr2_ema_7b_fp16.safetensors").exists():
+            return True, "seedvr2_7b"
+        return True, "seedvr2_3b"
+    return False, None
+
+
 def load_ml_model():
     """Load an ML upscaling model."""
     global ml_state
@@ -54,31 +78,39 @@ def load_ml_model():
         return
     
     ml_state["loading"] = True
-    logger.info("Loading ML upscaling model...")
+    logger.info("Checking ML upscaling models...")
     
     try:
-        import torch
-        
         device = get_device()
         ml_state["device"] = device
-        
         logger.info(f"Using device: {device}")
         
-        # Determine dtype based on device
-        # MPS needs float32 - float16 produces NaN/black images
+        # Check for SeedVR2 models (best quality)
+        seedvr2_available, seedvr2_type = check_seedvr2_models()
+        ml_state["seedvr2_available"] = seedvr2_available
+        
+        if seedvr2_available:
+            ml_state["pipeline_type"] = seedvr2_type
+            ml_state["available"] = True
+            ml_state["error"] = None
+            logger.info(f"✓ SeedVR2 {seedvr2_type.split('_')[1].upper()} FP16 ready!")
+            ml_state["loading"] = False
+            return
+        
+        # Fallback: Try loading SD Upscaler
+        import torch
+        
         if device == "cuda":
             dtype = torch.float16
         elif device == "mps":
-            dtype = torch.float32  # MPS float16 is buggy
+            dtype = torch.float32
         else:
             dtype = torch.float32
         
-        # Try Stable Diffusion x4 Upscaler (publicly available, no auth needed)
         try:
             from diffusers import StableDiffusionUpscalePipeline
             
-            logger.info("Loading Stable Diffusion x4 Upscaler...")
-            # Only use fp16 variant on CUDA, not MPS
+            logger.info("Loading Stable Diffusion x4 Upscaler as fallback...")
             use_fp16_variant = (dtype == torch.float16 and device == "cuda")
             pipeline = StableDiffusionUpscalePipeline.from_pretrained(
                 "stabilityai/stable-diffusion-x4-upscaler",
@@ -86,10 +118,7 @@ def load_ml_model():
                 variant="fp16" if use_fp16_variant else None,
             )
             
-            # Move to device
             pipeline = pipeline.to(device)
-            
-            # Memory optimizations for GPU devices
             if device in ("cuda", "mps"):
                 pipeline.enable_attention_slicing()
             
@@ -97,34 +126,12 @@ def load_ml_model():
             ml_state["pipeline_type"] = "sd_upscaler"
             ml_state["available"] = True
             ml_state["error"] = None
-            logger.info("✓ Stable Diffusion x4 Upscaler loaded!")
+            logger.info("✓ SD Upscaler loaded (fallback)")
             
         except Exception as e:
             logger.warning(f"SD Upscaler failed: {e}")
+            ml_state["error"] = str(e)
             
-            # Fallback: Try LDSR (Latent Diffusion Super Resolution)
-            try:
-                from diffusers import LDMSuperResolutionPipeline
-                
-                logger.info("Trying LDSR model as fallback...")
-                pipeline = LDMSuperResolutionPipeline.from_pretrained(
-                    "CompVis/ldm-super-resolution-4x-openimages",
-                    torch_dtype=dtype,
-                )
-                pipeline = pipeline.to(device)
-                
-                ml_state["pipeline"] = pipeline
-                ml_state["pipeline_type"] = "ldsr"
-                ml_state["available"] = True
-                ml_state["error"] = None
-                logger.info("✓ LDSR model loaded!")
-                
-            except Exception as e2:
-                raise Exception(f"All ML models failed: SD={e}, LDSR={e2}")
-        
-    except ImportError as e:
-        ml_state["error"] = f"Missing dependencies: {e}"
-        logger.error(f"ML dependencies not installed: {e}")
     except Exception as e:
         ml_state["error"] = str(e)
         logger.error(f"Failed to load ML model: {e}")
@@ -145,9 +152,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Qwen Upscaler API",
-    description="AI-powered image upscaling with real-time progress",
-    version="2.1.0",
+    title="Upscaler API",
+    description="AI-powered image upscaling with SeedVR2 and SD Upscaler",
+    version="3.0.0",
     lifespan=lifespan
 )
 
@@ -174,6 +181,7 @@ class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
     model_loading: bool
+    model_type: Optional[str] = None
     gpu_available: bool
     device: str
     error: Optional[str] = None
@@ -209,153 +217,186 @@ def image_to_base64(image: Image.Image, format: str = "JPEG", quality: int = 85)
     return base64.b64encode(buffer.read()).decode('utf-8')
 
 
-def decode_latents_to_image(pipeline, latents):
-    """Decode latents to a viewable image."""
-    import torch
+async def upscale_with_seedvr2(
+    image: Image.Image, 
+    scale: int, 
+    denoise: float,
+    color_correction: str = "none",
+    progress_callback=None
+) -> Image.Image:
+    """
+    Upscale using SeedVR2 CLI.
     
-    # Scale latents (0.18215 is the SD VAE scaling factor)
-    VAE_SCALING_FACTOR = 0.18215
-    latents = 1 / VAE_SCALING_FACTOR * latents
+    Args:
+        image: Input PIL Image
+        scale: Scale factor (2, 3, or 4)
+        denoise: Denoising strength (0-1)
+        color_correction: 'none', 'lab', 'wavelet', 'hsv', 'adain'
+        progress_callback: Optional callback for progress updates
+    """
+    # Calculate target resolution
+    target_height = image.height * scale
+    target_width = image.width * scale
+    target_resolution = min(target_height, target_width)
     
-    with torch.no_grad():
-        image = pipeline.vae.decode(latents).sample
+    # Create temp files
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as input_file:
+        image.save(input_file, format="PNG")
+        input_path = input_file.name
     
-    # Convert to PIL
-    image = (image / 2 + 0.5).clamp(0, 1)
-    image = image.cpu().permute(0, 2, 3, 1).numpy()
-    image = (image * 255).round().astype("uint8")
-    image = Image.fromarray(image[0])
+    output_path = input_path.replace(".png", "_upscaled.png")
     
-    return image
+    try:
+        # Build CLI command
+        cli_path = SEEDVR2_DIR / "inference_cli.py"
+        dit_model = "seedvr2_ema_3b_fp16.safetensors"
+        
+        # Check for 7B model
+        if (SEEDVR2_MODELS_DIR / "seedvr2_ema_7b_fp16.safetensors").exists():
+            dit_model = "seedvr2_ema_7b_fp16.safetensors"
+        
+        cmd = [
+            sys.executable, str(cli_path),
+            input_path,
+            "--dit_model", dit_model,
+            "--model_dir", str(SEEDVR2_MODELS_DIR),
+            "--resolution", str(target_resolution),
+            "--color_correction", color_correction,
+            "--output", output_path,
+        ]
+        
+        # Add noise scale based on denoise parameter
+        if denoise > 0:
+            cmd.extend(["--latent_noise_scale", str(denoise * 0.1)])
+        
+        logger.info(f"SeedVR2: {image.size} → {target_width}x{target_height} ({scale}x)")
+        
+        # Run CLI
+        if progress_callback:
+            progress_callback(0, 4, None, "Starting SeedVR2...")
+        
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        
+        # Parse progress from output
+        current_phase = 0
+        phase_names = ["Loading", "Encoding", "Upscaling", "Decoding"]
+        
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            
+            line_str = line.decode('utf-8', errors='ignore').strip()
+            
+            # Parse phase progress
+            if "Phase 1" in line_str:
+                current_phase = 1
+                if progress_callback:
+                    progress_callback(1, 4, None, "VAE Encoding...")
+            elif "Phase 2" in line_str:
+                current_phase = 2
+                if progress_callback:
+                    progress_callback(2, 4, None, "AI Upscaling...")
+            elif "Phase 3" in line_str:
+                current_phase = 3
+                if progress_callback:
+                    progress_callback(3, 4, None, "VAE Decoding...")
+            elif "Phase 4" in line_str or "completed" in line_str.lower():
+                current_phase = 4
+                if progress_callback:
+                    progress_callback(4, 4, None, "Finalizing...")
+        
+        await process.wait()
+        
+        if process.returncode != 0:
+            raise RuntimeError(f"SeedVR2 failed with exit code {process.returncode}")
+        
+        # Load result
+        if not os.path.exists(output_path):
+            raise RuntimeError(f"Output file not created: {output_path}")
+        
+        result = Image.open(output_path).convert("RGB")
+        
+        # Resize to exact target if needed
+        if result.width != target_width or result.height != target_height:
+            result = result.resize((target_width, target_height), Image.Resampling.LANCZOS)
+        
+        return result
+        
+    finally:
+        # Cleanup temp files
+        try:
+            os.unlink(input_path)
+            if os.path.exists(output_path):
+                os.unlink(output_path)
+        except:
+            pass
 
 
-def upscale_ml_with_progress(image: Image.Image, scale: int, denoise: float, creativity: float, progress_callback):
-    """AI-powered upscaling with progress callbacks."""
+def upscale_sd_with_progress(image: Image.Image, scale: int, denoise: float, creativity: float, progress_callback):
+    """SD Upscaler with progress callbacks (fallback when SeedVR2 unavailable)."""
     import torch
     
     pipeline = ml_state["pipeline"]
     if pipeline is None:
-        raise RuntimeError("ML model not loaded")
+        raise RuntimeError("SD model not loaded")
     
-    pipeline_type = ml_state.get("pipeline_type", "unknown")
     device = ml_state.get("device", "cpu")
     
-    if pipeline_type == "sd_upscaler":
-        # Remember original size for final scaling
-        original_width, original_height = image.width, image.height
-        target_width = original_width * scale
-        target_height = original_height * scale
-        
-        # SD Upscaler always outputs 4x of its input
-        # MPS has memory constraints - limit input size
-        if device == "mps":
-            max_input = 192  # Smaller for MPS to avoid OOM
-        else:
-            max_input = 384
-            
-        if image.width > max_input or image.height > max_input:
-            ratio = min(max_input / image.width, max_input / image.height)
-            image = image.resize(
-                (int(image.width * ratio), int(image.height * ratio)),
-                Image.Resampling.LANCZOS
-            )
-        
-        prompt = "high quality, detailed, sharp, 4k resolution"
-        negative_prompt = "blurry, noise, artifacts, low quality, pixelated, jpeg artifacts"
-        
-        num_steps = int(20 + denoise * 30)  # 20-50 steps
-        
-        # On MPS, don't decode previews (too memory intensive)
-        # On CUDA, we can decode previews
-        enable_previews = (device == "cuda")
-        preview_interval = max(1, num_steps // 8)
-        
-        def callback_fn(step: int, timestep: int, latents: torch.Tensor):
-            """Legacy callback to capture intermediate results."""
-            preview_image = None
-            
-            # Only decode previews on CUDA (MPS runs out of memory)
-            if enable_previews and (step % preview_interval == 0 or step == num_steps - 1):
-                try:
-                    preview_image = decode_latents_to_image(pipeline, latents)
-                except Exception as e:
-                    logger.warning(f"Preview decode failed: {e}")
-            
-            progress_callback(step + 1, num_steps, preview_image)
-        
-        # Noise level controls how much the AI can "reimagine" vs preserve
-        # 0 = preserve original closely, 20-50 = balanced, 100+ = very creative
-        noise_level = int(creativity * 100)  # Map 0-1 to 0-100
-        
-        logger.info(f"SD Upscaler: {original_width}x{original_height} → {target_width}x{target_height} ({scale}x, {num_steps} steps)")
-        
-        # Clear MPS cache before inference
-        if device == "mps":
-            torch.mps.empty_cache()
-        
-        with torch.inference_mode():
-            result = pipeline(
-                prompt=prompt,
-                image=image,
-                negative_prompt=negative_prompt,
-                num_inference_steps=num_steps,
-                guidance_scale=7.5 + denoise * 2,
-                noise_level=noise_level,
-                callback=callback_fn,
-                callback_steps=1,
-            ).images[0]
-        
-        # Clear cache after inference
-        if device == "mps":
-            torch.mps.empty_cache()
-        
-        # Resize to target dimensions (user's requested scale)
-        if result.width != target_width or result.height != target_height:
-            logger.info(f"Resizing ML output {result.size} → ({target_width}, {target_height})")
-            result = result.resize((target_width, target_height), Image.Resampling.LANCZOS)
-        
-        return result
+    original_width, original_height = image.width, image.height
+    target_width = original_width * scale
+    target_height = original_height * scale
     
-    elif pipeline_type == "ldsr":
-        # Remember original size for final scaling
-        original_width, original_height = image.width, image.height
-        target_width = original_width * scale
-        target_height = original_height * scale
-        
-        # LDSR has smaller input limits
+    # SD Upscaler limits
+    if device == "mps":
         max_input = 192
-        if image.width > max_input or image.height > max_input:
-            ratio = min(max_input / image.width, max_input / image.height)
-            image = image.resize(
-                (int(image.width * ratio), int(image.height * ratio)),
-                Image.Resampling.LANCZOS
-            )
-        
-        num_steps = int(50 + denoise * 50)
-        
-        logger.info(f"LDSR: {original_width}x{original_height} → {target_width}x{target_height} ({scale}x, {num_steps} steps)")
-        
-        # LDSR: just send periodic progress updates
-        for i in range(0, num_steps, num_steps // 10):
-            progress_callback(i, num_steps, None)
-        
-        with torch.inference_mode():
-            result = pipeline(
-                image=image,
-                num_inference_steps=num_steps,
-                eta=1.0,
-            ).images[0]
-        
-        progress_callback(num_steps, num_steps, None)
-        
-        # Resize to target dimensions
-        if result.width != target_width or result.height != target_height:
-            result = result.resize((target_width, target_height), Image.Resampling.LANCZOS)
-        
-        return result
-    
     else:
-        raise RuntimeError(f"Unknown pipeline type: {pipeline_type}")
+        max_input = 384
+        
+    if image.width > max_input or image.height > max_input:
+        ratio = min(max_input / image.width, max_input / image.height)
+        image = image.resize(
+            (int(image.width * ratio), int(image.height * ratio)),
+            Image.Resampling.LANCZOS
+        )
+    
+    prompt = "high quality, detailed, sharp, 4k resolution"
+    negative_prompt = "blurry, noise, artifacts, low quality, pixelated"
+    
+    num_steps = int(20 + denoise * 30)
+    noise_level = int(creativity * 100)
+    
+    def callback_fn(step: int, timestep: int, latents: torch.Tensor):
+        progress_callback(step + 1, num_steps, None, f"Step {step + 1}/{num_steps}")
+    
+    logger.info(f"SD Upscaler: {original_width}x{original_height} → {target_width}x{target_height}")
+    
+    if device == "mps":
+        torch.mps.empty_cache()
+    
+    with torch.inference_mode():
+        result = pipeline(
+            prompt=prompt,
+            image=image,
+            negative_prompt=negative_prompt,
+            num_inference_steps=num_steps,
+            guidance_scale=7.5 + denoise * 2,
+            noise_level=noise_level,
+            callback=callback_fn,
+            callback_steps=1,
+        ).images[0]
+    
+    if device == "mps":
+        torch.mps.empty_cache()
+    
+    if result.width != target_width or result.height != target_height:
+        result = result.resize((target_width, target_height), Image.Resampling.LANCZOS)
+    
+    return result
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -366,6 +407,7 @@ async def health_check():
         status="healthy",
         model_loaded=ml_state["available"],
         model_loading=ml_state["loading"],
+        model_type=ml_state.get("pipeline_type"),
         gpu_available=device in ["cuda", "mps"],
         device=device,
         error=ml_state["error"]
@@ -393,13 +435,14 @@ async def upscale_image_stream(
     scale: int = Form(default=2, ge=1, le=4),
     denoise: float = Form(default=0.3, ge=0.0, le=1.0),
     creativity: float = Form(default=0.0, ge=0.0, le=1.0),
-    use_ml: bool = Form(default=True)
+    use_ml: bool = Form(default=True),
+    color_correction: str = Form(default="none")
 ):
     """
     Upscale an image with real-time progress streaming via SSE.
     
     Returns Server-Sent Events with:
-    - type: "progress" - step updates with optional preview image
+    - type: "progress" - step updates
     - type: "complete" - final result
     - type: "error" - error message
     """
@@ -410,96 +453,92 @@ async def upscale_image_stream(
             pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
             original_size = (pil_image.width, pil_image.height)
             
-            # Send start event
             yield f"data: {json.dumps({'type': 'start', 'original_size': original_size})}\n\n"
             
             method = "lanczos"
             
-            if use_ml and ml_state["available"] and ml_state["pipeline"] is not None:
+            if use_ml and ml_state["available"]:
                 try:
-                    # Progress tracking
-                    progress_queue = asyncio.Queue()
+                    pipeline_type = ml_state.get("pipeline_type", "")
                     
-                    def sync_progress_callback(step, total, preview_image):
-                        """Sync callback that puts progress into queue."""
-                        preview_b64 = None
-                        if preview_image is not None:
-                            # Encode preview as low-quality JPEG for speed
-                            preview_b64 = image_to_base64(preview_image, "JPEG", quality=60)
+                    if pipeline_type.startswith("seedvr2"):
+                        # Use SeedVR2
+                        progress_data = {"step": 0, "total": 4, "message": "Starting..."}
                         
-                        # Use asyncio to put into queue from sync context
-                        try:
-                            progress_queue.put_nowait({
-                                "step": step,
-                                "total": total,
-                                "preview": preview_b64
-                            })
-                        except asyncio.QueueFull:
-                            pass  # Queue full, skip this progress update
-                    
-                    # Run ML upscaling in thread
-                    import concurrent.futures
-                    
-                    loop = asyncio.get_event_loop()
-                    
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = loop.run_in_executor(
-                            executor,
-                            lambda: upscale_ml_with_progress(pil_image, scale, denoise, creativity, sync_progress_callback)
-                        )
+                        def progress_callback(step, total, preview, message):
+                            progress_data["step"] = step
+                            progress_data["total"] = total
+                            progress_data["message"] = message
                         
-                        # Stream progress while waiting for completion
-                        last_step = 0
-                        while not future.done():
+                        # Run in executor
+                        import concurrent.futures
+                        loop = asyncio.get_event_loop()
+                        
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            future = loop.run_in_executor(
+                                executor,
+                                lambda: asyncio.run(upscale_with_seedvr2(
+                                    pil_image, scale, denoise, color_correction, progress_callback
+                                ))
+                            )
+                            
+                            # Stream progress
+                            last_step = -1
+                            while not future.done():
+                                await asyncio.sleep(0.5)
+                                if progress_data["step"] > last_step:
+                                    last_step = progress_data["step"]
+                                    yield f"data: {json.dumps({'type': 'progress', 'step': progress_data['step'], 'total': progress_data['total'], 'percent': int(progress_data['step'] / progress_data['total'] * 100), 'message': progress_data['message']})}\n\n"
+                            
+                            upscaled = future.result()
+                            method = f"seedvr2 ({pipeline_type.split('_')[1].upper()})"
+                    
+                    elif ml_state["pipeline"] is not None:
+                        # Use SD Upscaler
+                        progress_queue = asyncio.Queue()
+                        
+                        def sync_progress(step, total, preview, message):
                             try:
-                                # Check for progress updates
-                                progress = await asyncio.wait_for(
-                                    progress_queue.get(),
-                                    timeout=0.1
-                                )
-                                
-                                if progress["step"] > last_step:
-                                    last_step = progress["step"]
-                                    event_data = {
-                                        "type": "progress",
-                                        "step": progress["step"],
-                                        "total": progress["total"],
-                                        "percent": round(progress["step"] / progress["total"] * 100)
-                                    }
-                                    if progress["preview"]:
-                                        event_data["preview"] = progress["preview"]
-                                    
-                                    yield f"data: {json.dumps(event_data)}\n\n"
-                            except asyncio.TimeoutError:
-                                # No progress yet, continue waiting
-                                continue
-                            except Exception as e:
-                                logger.warning(f"Progress error: {e}")
-                                continue
+                                progress_queue.put_nowait({"step": step, "total": total, "message": message})
+                            except:
+                                pass
                         
-                        # Get the result
-                        upscaled = future.result()
-                        method = "ml"
-                    
+                        import concurrent.futures
+                        loop = asyncio.get_event_loop()
+                        
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            future = loop.run_in_executor(
+                                executor,
+                                lambda: upscale_sd_with_progress(pil_image, scale, denoise, creativity, sync_progress)
+                            )
+                            
+                            while not future.done():
+                                try:
+                                    progress = await asyncio.wait_for(progress_queue.get(), timeout=0.1)
+                                    yield f"data: {json.dumps({'type': 'progress', 'step': progress['step'], 'total': progress['total'], 'percent': int(progress['step'] / progress['total'] * 100), 'message': progress['message']})}\n\n"
+                                except asyncio.TimeoutError:
+                                    continue
+                            
+                            upscaled = future.result()
+                            method = "sd_upscaler"
+                    else:
+                        raise RuntimeError("No ML model available")
+                        
                 except Exception as e:
                     logger.warning(f"ML upscale failed: {e}")
                     yield f"data: {json.dumps({'type': 'fallback', 'reason': str(e)})}\n\n"
                     upscaled = upscale_lanczos(pil_image, scale, denoise)
                     method = "lanczos (ml failed)"
             else:
-                # Lanczos fallback with simulated progress
                 reason = "model loading" if ml_state["loading"] else "ml unavailable"
                 yield f"data: {json.dumps({'type': 'progress', 'step': 1, 'total': 3, 'percent': 33, 'message': 'Resizing...'})}\n\n"
-                
                 upscaled = upscale_lanczos(pil_image, scale, denoise)
                 method = f"lanczos ({reason})" if use_ml else "lanczos"
-                
-                yield f"data: {json.dumps({'type': 'progress', 'step': 3, 'total': 3, 'percent': 100, 'message': 'Enhancing...'})}\n\n"
+                yield f"data: {json.dumps({'type': 'progress', 'step': 3, 'total': 3, 'percent': 100, 'message': 'Done'})}\n\n"
             
             upscaled_size = (upscaled.width, upscaled.height)
             logger.info(f"Complete: {original_size} → {upscaled_size} via {method}")
             
-            # Send final result
             final_b64 = image_to_base64(upscaled, "PNG")
             
             yield f"data: {json.dumps({'type': 'complete', 'image': final_b64, 'original_size': original_size, 'upscaled_size': upscaled_size, 'method': method})}\n\n"
@@ -525,7 +564,8 @@ async def upscale_image(
     scale: int = Form(default=2, ge=1, le=4),
     denoise: float = Form(default=0.3, ge=0.0, le=1.0),
     creativity: float = Form(default=0.0, ge=0.0, le=1.0),
-    use_ml: bool = Form(default=True)
+    use_ml: bool = Form(default=True),
+    color_correction: str = Form(default="none")
 ):
     """
     Upscale an image (non-streaming version).
@@ -538,16 +578,25 @@ async def upscale_image(
         
         method = "lanczos"
         
-        if use_ml and ml_state["available"] and ml_state["pipeline"] is not None:
+        if use_ml and ml_state["available"]:
             try:
-                logger.info(f"ML upscale: {original_size} → {scale}x")
-                upscaled = upscale_ml_with_progress(
-                    pil_image, scale, denoise, creativity,
-                    lambda step, total, preview: None  # No-op callback
-                )
-                method = "ml"
+                pipeline_type = ml_state.get("pipeline_type", "")
+                
+                if pipeline_type.startswith("seedvr2"):
+                    logger.info(f"SeedVR2 upscale: {original_size} → {scale}x")
+                    upscaled = await upscale_with_seedvr2(pil_image, scale, denoise, color_correction)
+                    method = f"seedvr2 ({pipeline_type.split('_')[1].upper()})"
+                elif ml_state["pipeline"] is not None:
+                    logger.info(f"SD upscale: {original_size} → {scale}x")
+                    upscaled = upscale_sd_with_progress(
+                        pil_image, scale, denoise, creativity,
+                        lambda s, t, p, m: None
+                    )
+                    method = "sd_upscaler"
+                else:
+                    raise RuntimeError("No model available")
             except Exception as e:
-                logger.warning(f"ML upscale failed, falling back to Lanczos: {e}")
+                logger.warning(f"ML upscale failed: {e}")
                 upscaled = upscale_lanczos(pil_image, scale, denoise)
                 method = "lanczos (ml failed)"
         else:
@@ -584,12 +633,14 @@ async def upscale_image(
 async def root():
     """Root endpoint with API info."""
     return {
-        "name": "Qwen Upscaler API",
-        "version": "2.1.0",
+        "name": "Upscaler API",
+        "version": "3.0.0",
         "ml_status": {
             "available": ml_state["available"],
             "loading": ml_state["loading"],
+            "pipeline_type": ml_state.get("pipeline_type"),
             "device": ml_state["device"],
+            "seedvr2_available": ml_state.get("seedvr2_available", False),
             "error": ml_state["error"]
         },
         "endpoints": {
@@ -603,6 +654,7 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    logger.info("Starting Upscaler Backend v2.1...")
+    logger.info("Starting Upscaler Backend v3.0 with SeedVR2 support...")
     logger.info(f"Device: {get_device()}")
+    logger.info(f"SeedVR2 models dir: {SEEDVR2_MODELS_DIR}")
     uvicorn.run(app, host="0.0.0.0", port=8000)

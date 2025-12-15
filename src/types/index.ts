@@ -18,6 +18,7 @@ export interface HealthResponse {
   status: string;
   model_loaded: boolean;
   model_loading: boolean;
+  model_type?: string; // "seedvr2_3b", "seedvr2_7b", "sd_upscaler", "ldsr"
   gpu_available: boolean;
   device: string;
   error?: string;
