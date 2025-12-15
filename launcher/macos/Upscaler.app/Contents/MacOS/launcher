@@ -3,3 +3,6 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)/Resources"
 osascript -e "tell application \"Terminal\" to do script \"'$SCRIPT_DIR/run.sh'\""
 
+
+
+
