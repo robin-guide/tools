@@ -1,0 +1,17 @@
+# Exclude backend (runs locally only)
+backend/
+
+# Exclude large model files
+**/*.safetensors
+**/*.pt
+**/*.pth
+**/*.ckpt
+
+# Exclude Python environments
+**/venv/
+**/__pycache__/
+**/*.pyc
+
+# Exclude node_modules (handled by Vercel)
+node_modules/
+
