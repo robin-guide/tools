@@ -228,32 +228,68 @@ export default function UpscalerPage() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30"
+              className="mb-6 p-5 rounded-xl bg-blue-500/10 border border-blue-500/30"
             >
               <div className="flex items-start gap-4">
-                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
-                  <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-sm font-medium text-amber-400">Using basic upscaling (Lanczos)</h3>
-                  <p className="text-xs text-amber-400/70 mt-1">
-                    AI upscaling is not available. The ML model may have failed to load or your system doesn't have enough resources.
+                  <h3 className="text-sm font-medium text-blue-400 mb-2">Enable AI Upscaling</h3>
+                  <p className="text-xs text-blue-400/70 mb-4">
+                    Download AI models to unlock high-quality upscaling. The app works without them, but AI enhancement requires a one-time download (6-15GB).
                   </p>
-                  <button
-                    onClick={() => setShowSetup(true)}
-                    className="mt-3 text-xs text-amber-400 hover:text-amber-300 underline underline-offset-2"
-                  >
-                    View setup guide →
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`${API_URL}/download-models?model_size=3b`, { method: 'POST' });
+                          const data = await res.json();
+                          if (data.status === 'success') {
+                            // Reload health check
+                            setTimeout(() => checkHealth().then(setHealth), 2000);
+                          } else {
+                            alert(`Download failed: ${data.message}`);
+                          }
+                        } catch (e) {
+                          alert(`Error: ${e instanceof Error ? e.message : 'Download failed'}`);
+                        }
+                      }}
+                      className="px-4 py-2 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-xs text-blue-400 border border-blue-500/30 transition-colors"
+                    >
+                      Download 3B Model (6.3GB)
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`${API_URL}/download-models?model_size=7b`, { method: 'POST' });
+                          const data = await res.json();
+                          if (data.status === 'success') {
+                            setTimeout(() => checkHealth().then(setHealth), 2000);
+                          } else {
+                            alert(`Download failed: ${data.message}`);
+                          }
+                        } catch (e) {
+                          alert(`Error: ${e instanceof Error ? e.message : 'Download failed'}`);
+                        }
+                      }}
+                      className="px-4 py-2 rounded-lg bg-stone-800/50 hover:bg-stone-800 text-xs text-stone-400 border border-stone-800 transition-colors"
+                    >
+                      Download 7B Model (15GB)
+                    </button>
+                    <button
+                      onClick={() => setShowSetup(true)}
+                      className="px-4 py-2 rounded-lg bg-stone-800/50 hover:bg-stone-800 text-xs text-stone-400 border border-stone-800 transition-colors"
+                    >
+                      View Setup Guide
+                    </button>
+                  </div>
+                  <p className="text-xs text-blue-400/50 mt-3">
+                    💡 <strong>3B model</strong> is recommended for most users. <strong>7B model</strong> offers best quality but needs more RAM.
+                  </p>
                 </div>
-                <button
-                  onClick={() => setShowSetup(true)}
-                  className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-xs text-amber-400 transition-colors"
-                >
-                  Fix this
-                </button>
               </div>
             </motion.div>
           )}

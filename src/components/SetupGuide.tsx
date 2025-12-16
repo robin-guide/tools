@@ -19,7 +19,10 @@ export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
     modelLoaded: boolean;
     modelLoading: boolean;
     device: string;
+    modelType?: string;
   } | null>(null);
+  const [downloadingModel, setDownloadingModel] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<string>('');
 
   // Check backend health
   const checkBackend = useCallback(async () => {
@@ -34,6 +37,7 @@ export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
           modelLoaded: data.model_loaded,
           modelLoading: data.model_loading,
           device: data.device,
+          modelType: data.model_type,
         });
         return true;
       }
@@ -119,10 +123,10 @@ export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
           </motion.div>
           
           <h1 className="text-3xl font-display font-medium text-stone-100 mb-3">
-            One more step
+            Almost there!
           </h1>
-          <p className="text-stone-400">
-            Download the app to run AI upscaling on your Mac.
+          <p className="text-stone-400 max-w-md mx-auto">
+            Upscaler runs on your Mac for privacy and speed. Download the app below—it'll set everything up automatically.
           </p>
         </div>
 
@@ -137,17 +141,107 @@ export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
             >
               <div className="flex items-center gap-3">
                 <div className="w-3 h-3 rounded-full bg-emerald-500" />
-                <div>
+                <div className="flex-1">
                   <p className="text-sm font-medium text-emerald-400">
                     {backendHealth.modelLoaded 
-                      ? '✓ Connected and ready!'
+                      ? `✓ Connected and ready!${backendHealth.modelType ? ` (${backendHealth.modelType})` : ''}`
                       : backendHealth.modelLoading
                         ? 'Connected · Loading ML model...'
-                        : 'Connected · Initializing...'
+                        : 'Connected · Backend running'
                     }
                   </p>
                   {backendHealth.modelLoaded && (
                     <p className="text-xs text-emerald-400/70 mt-0.5">Redirecting to upscaler...</p>
+                  )}
+                  {!backendHealth.modelLoaded && !backendHealth.modelLoading && (
+                    <p className="text-xs text-emerald-400/70 mt-0.5">
+                      AI models not loaded. You can download them in the app.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Model Download Prompt */}
+        <AnimatePresence>
+          {backendHealth?.connected && !backendHealth.modelLoaded && !backendHealth.modelLoading && !downloadingModel && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mb-6 p-5 rounded-xl bg-blue-500/10 border border-blue-500/30"
+            >
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-medium text-blue-400 mb-2">Enable AI Upscaling</h3>
+                  <p className="text-xs text-blue-400/70 mb-4">
+                    Download AI models to unlock high-quality upscaling. The app works without them, but AI enhancement requires a one-time download.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={async () => {
+                        setDownloadingModel(true);
+                        setDownloadProgress('Downloading 3B model (6.3GB)...');
+                        try {
+                          const res = await fetch(`${apiUrl}/download-models?model_size=3b`, { method: 'POST' });
+                          const data = await res.json();
+                          if (data.status === 'success') {
+                            setDownloadProgress('✓ Models downloaded! Reloading...');
+                            setTimeout(() => checkBackend(), 2000);
+                          } else {
+                            setDownloadProgress(`Error: ${data.message}`);
+                            setTimeout(() => setDownloadingModel(false), 3000);
+                          }
+                        } catch (e) {
+                          setDownloadProgress(`Error: ${e instanceof Error ? e.message : 'Download failed'}`);
+                          setTimeout(() => setDownloadingModel(false), 3000);
+                        }
+                      }}
+                      disabled={downloadingModel}
+                      className="px-4 py-2 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-xs text-blue-400 border border-blue-500/30 transition-colors disabled:opacity-50"
+                    >
+                      Download 3B Model (6.3GB)
+                    </button>
+                    <button
+                      onClick={async () => {
+                        setDownloadingModel(true);
+                        setDownloadProgress('Downloading 7B model (15GB)...');
+                        try {
+                          const res = await fetch(`${apiUrl}/download-models?model_size=7b`, { method: 'POST' });
+                          const data = await res.json();
+                          if (data.status === 'success') {
+                            setDownloadProgress('✓ Models downloaded! Reloading...');
+                            setTimeout(() => checkBackend(), 2000);
+                          } else {
+                            setDownloadProgress(`Error: ${data.message}`);
+                            setTimeout(() => setDownloadingModel(false), 3000);
+                          }
+                        } catch (e) {
+                          setDownloadProgress(`Error: ${e instanceof Error ? e.message : 'Download failed'}`);
+                          setTimeout(() => setDownloadingModel(false), 3000);
+                        }
+                      }}
+                      disabled={downloadingModel}
+                      className="px-4 py-2 rounded-lg bg-stone-800/50 hover:bg-stone-800 text-xs text-stone-400 border border-stone-800 transition-colors disabled:opacity-50"
+                    >
+                      Download 7B Model (15GB)
+                    </button>
+                    <button
+                      onClick={onComplete}
+                      className="px-4 py-2 rounded-lg bg-stone-800/50 hover:bg-stone-800 text-xs text-stone-400 border border-stone-800 transition-colors"
+                    >
+                      Skip for now
+                    </button>
+                  </div>
+                  {downloadProgress && (
+                    <p className="text-xs text-blue-400/70 mt-3">{downloadProgress}</p>
                   )}
                 </div>
               </div>
@@ -185,24 +279,33 @@ export default function SetupGuide({ onComplete, apiUrl }: SetupGuideProps) {
 
             {/* Instructions */}
             <div className="p-5 rounded-xl bg-stone-900/50 border border-stone-800/50">
-              <p className="text-sm text-stone-300 mb-4">After downloading:</p>
+              <p className="text-sm text-stone-300 mb-4 font-medium">Quick setup (3 steps):</p>
               <ol className="space-y-3 text-sm text-stone-400">
                 <li className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-6 h-6 rounded-full bg-stone-800 flex items-center justify-center text-xs text-stone-300">1</span>
-                  <span>Unzip the file</span>
+                  <span>Unzip the downloaded file</span>
                 </li>
                 <li className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-6 h-6 rounded-full bg-stone-800 flex items-center justify-center text-xs text-stone-300">2</span>
                   <div>
                     <span><strong className="text-stone-200">Right-click</strong> Upscaler.app → select <strong className="text-stone-200">"Open"</strong></span>
-                    <p className="text-xs text-stone-500 mt-1">First time only — macOS requires this for new apps</p>
+                    <p className="text-xs text-stone-500 mt-1">First time only — macOS security requires this step</p>
                   </div>
                 </li>
                 <li className="flex items-start gap-3">
                   <span className="flex-shrink-0 w-6 h-6 rounded-full bg-stone-800 flex items-center justify-center text-xs text-stone-300">3</span>
-                  <span>Click "Open" when prompted, then wait for setup</span>
+                  <div>
+                    <span>Click "Open" when prompted</span>
+                    <p className="text-xs text-stone-500 mt-1">The app will install dependencies and start automatically</p>
+                  </div>
                 </li>
               </ol>
+              
+              <div className="mt-4 pt-4 border-t border-stone-800/50">
+                <p className="text-xs text-stone-500">
+                  <strong className="text-stone-400">What happens next:</strong> The app will check for Python, install dependencies, and start the backend server. This page will update automatically when it's ready.
+                </p>
+              </div>
               
               {/* macOS Security Help */}
               <details className="mt-4 pt-4 border-t border-stone-800/50">

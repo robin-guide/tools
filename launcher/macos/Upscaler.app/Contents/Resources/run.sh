@@ -276,11 +276,37 @@ print_success "Server running on port $BACKEND_PORT"
 # Check ML status
 HEALTH=$(curl -s "http://localhost:$BACKEND_PORT/health" 2>/dev/null)
 if echo "$HEALTH" | grep -q '"model_loaded":true'; then
-    print_success "AI model loaded and ready!"
+    MODEL_TYPE=$(echo "$HEALTH" | grep -o '"model_type":"[^"]*"' | cut -d'"' -f4)
+    if [ -n "$MODEL_TYPE" ]; then
+        print_success "AI model loaded: $MODEL_TYPE"
+    else
+        print_success "AI model loaded and ready!"
+    fi
 elif echo "$HEALTH" | grep -q '"model_loading":true'; then
     print_step "AI model is loading in background..."
 else
-    print_warning "Running in basic mode (no AI)"
+    # Check if models exist
+    MODELS_DIR="$INSTALL_DIR/backend/seedvr2/models/SEEDVR2"
+    if [ ! -f "$MODELS_DIR/ema_vae_fp16.safetensors" ] || [ ! -f "$MODELS_DIR/seedvr2_ema_3b_fp16.safetensors" ] && [ ! -f "$MODELS_DIR/seedvr2_ema_7b_fp16.safetensors" ]; then
+        echo ""
+        print_warning "AI models not found"
+        echo ""
+        echo -e "  ${CYAN}To enable AI upscaling, you need to download models:${NC}"
+        echo ""
+        echo -e "  ${YELLOW}Option 1: Download via web interface${NC}"
+        echo "  After the app opens, you'll see a button to download models."
+        echo ""
+        echo -e "  ${YELLOW}Option 2: Download via API${NC}"
+        echo "  curl -X POST http://localhost:$BACKEND_PORT/download-models?model_size=3b"
+        echo ""
+        echo -e "  ${CYAN}Model sizes:${NC}"
+        echo "  • 3B model: ~6.3GB (recommended for most users)"
+        echo "  • 7B model: ~15GB (best quality, needs more RAM)"
+        echo ""
+        print_warning "Running in basic mode (Lanczos upscaling only)"
+    else
+        print_warning "Running in basic mode (no AI)"
+    fi
 fi
 
 echo ""

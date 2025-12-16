@@ -429,6 +429,90 @@ async def trigger_model_load():
     return {"status": "started", "message": "Model loading started"}
 
 
+@app.post("/download-models")
+async def download_models(model_size: str = "3b"):
+    """
+    Download SeedVR2 models.
+    
+    Args:
+        model_size: "3b" (6.3GB) or "7b" (15GB)
+    """
+    import subprocess
+    import sys
+    
+    try:
+        # Ensure models directory exists
+        SEEDVR2_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Determine which model to download
+        if model_size.lower() == "7b":
+            dit_model = "seedvr2_ema_7b_fp16.safetensors"
+            size_gb = 15
+        else:
+            dit_model = "seedvr2_ema_3b_fp16.safetensors"
+            size_gb = 6.3
+        
+        vae_model = "ema_vae_fp16.safetensors"
+        
+        # Check if already downloaded
+        dit_path = SEEDVR2_MODELS_DIR / dit_model
+        vae_path = SEEDVR2_MODELS_DIR / vae_model
+        
+        if dit_path.exists() and vae_path.exists():
+            return {
+                "status": "already_downloaded",
+                "message": f"Models already exist ({model_size.upper()})",
+                "dit_model": str(dit_path),
+                "vae_model": str(vae_path)
+            }
+        
+        # Download using huggingface_hub
+        from huggingface_hub import hf_hub_download
+        
+        logger.info(f"Downloading SeedVR2 {model_size.upper()} model (~{size_gb}GB)...")
+        
+        # Download VAE first (smaller, required for both)
+        if not vae_path.exists():
+            logger.info("Downloading VAE model (478MB)...")
+            hf_hub_download(
+                repo_id='numz/SeedVR2_comfyUI',
+                filename=vae_model,
+                local_dir=str(SEEDVR2_MODELS_DIR),
+                local_dir_use_symlinks=False
+            )
+            logger.info("✓ VAE downloaded")
+        
+        # Download DiT model
+        if not dit_path.exists():
+            logger.info(f"Downloading {model_size.upper()} model (~{size_gb}GB)...")
+            hf_hub_download(
+                repo_id='numz/SeedVR2_comfyUI',
+                filename=dit_model,
+                local_dir=str(SEEDVR2_MODELS_DIR),
+                local_dir_use_symlinks=False
+            )
+            logger.info(f"✓ {model_size.upper()} model downloaded")
+        
+        # Reload model
+        import threading
+        thread = threading.Thread(target=load_ml_model)
+        thread.start()
+        
+        return {
+            "status": "success",
+            "message": f"Models downloaded successfully ({model_size.upper()})",
+            "dit_model": str(dit_path),
+            "vae_model": str(vae_path)
+        }
+        
+    except Exception as e:
+        logger.error(f"Model download failed: {e}")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
 @app.post("/upscale/stream")
 async def upscale_image_stream(
     image: UploadFile = File(...),
