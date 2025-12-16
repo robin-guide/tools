@@ -6,3 +6,4 @@ osascript -e "tell application \"Terminal\" to do script \"'$SCRIPT_DIR/run.sh'\
 
 
 
+

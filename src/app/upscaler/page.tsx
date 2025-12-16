@@ -12,10 +12,11 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function UpscalerPage() {
   const [image, setImage] = useState<ImageData | null>(null);
+  // SeedVR2 optimized defaults: faithful upscaling with no noise injection
   const [params, setParams] = useState<UpscaleParams>({
     scale: 2,
-    denoise: 0.3,
-    creativity: 0,
+    denoise: 0,      // latent_noise_scale - 0 for faithful reproduction
+    creativity: 0,   // not used by SeedVR2
     useMl: true,
   });
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -285,53 +286,71 @@ export default function UpscalerPage() {
               </div>
             )}
 
-            {/* Enhancement Slider */}
-            <div className="flex items-center gap-3 flex-1 min-w-[160px]">
-              <span className="text-sm text-stone-500 whitespace-nowrap">Enhance</span>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={params.denoise * 100}
-                onChange={(e) => setParams({ ...params, denoise: parseInt(e.target.value) / 100 })}
-                disabled={isProcessing}
-                className={`
-                  flex-1 h-2 rounded-full appearance-none cursor-pointer bg-stone-800
-                  [&::-webkit-slider-thumb]:appearance-none
-                  [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
-                  [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-stone-400
-                  [&::-webkit-slider-thumb]:hover:bg-stone-300 [&::-webkit-slider-thumb]:transition-colors
-                  ${isProcessing ? 'opacity-50' : ''}
-                `}
-              />
-              <span className="text-xs font-mono text-stone-600 w-10 text-right">
-                {Math.round(params.denoise * 100)}%
-              </span>
-            </div>
+            {/* Detail Variation Slider - only show if not using SeedVR2 or for advanced users */}
+            {health?.model_type && !health.model_type.startsWith('seedvr2') && (
+              <div className="flex items-center gap-3 flex-1 min-w-[160px]">
+                <span className="text-sm text-stone-500 whitespace-nowrap" title="Adds variation to details (0 = faithful)">
+                  Detail
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={params.denoise * 100}
+                  onChange={(e) => setParams({ ...params, denoise: parseInt(e.target.value) / 100 })}
+                  disabled={isProcessing}
+                  className={`
+                    flex-1 h-2 rounded-full appearance-none cursor-pointer bg-stone-800
+                    [&::-webkit-slider-thumb]:appearance-none
+                    [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
+                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-stone-400
+                    [&::-webkit-slider-thumb]:hover:bg-stone-300 [&::-webkit-slider-thumb]:transition-colors
+                    ${isProcessing ? 'opacity-50' : ''}
+                  `}
+                />
+                <span className="text-xs font-mono text-stone-600 w-10 text-right">
+                  {Math.round(params.denoise * 100)}%
+                </span>
+              </div>
+            )}
 
-            {/* Creativity Slider */}
-            <div className="flex items-center gap-3 flex-1 min-w-[160px]">
-              <span className="text-sm text-stone-500 whitespace-nowrap">Creativity</span>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={params.creativity * 100}
-                onChange={(e) => setParams({ ...params, creativity: parseInt(e.target.value) / 100 })}
-                disabled={isProcessing}
-                className={`
-                  flex-1 h-2 rounded-full appearance-none cursor-pointer bg-stone-800
-                  [&::-webkit-slider-thumb]:appearance-none
-                  [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
-                  [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-violet-400
-                  [&::-webkit-slider-thumb]:hover:bg-violet-300 [&::-webkit-slider-thumb]:transition-colors
-                  ${isProcessing ? 'opacity-50' : ''}
-                `}
-              />
-              <span className="text-xs font-mono text-stone-600 w-10 text-right">
-                {Math.round(params.creativity * 100)}%
-              </span>
-            </div>
+            {/* Creativity Slider - only for SD Upscaler, not SeedVR2 */}
+            {health?.model_type && !health.model_type.startsWith('seedvr2') && (
+              <div className="flex items-center gap-3 flex-1 min-w-[160px]">
+                <span className="text-sm text-stone-500 whitespace-nowrap" title="AI hallucination level (0 = faithful)">
+                  Creativity
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={params.creativity * 100}
+                  onChange={(e) => setParams({ ...params, creativity: parseInt(e.target.value) / 100 })}
+                  disabled={isProcessing}
+                  className={`
+                    flex-1 h-2 rounded-full appearance-none cursor-pointer bg-stone-800
+                    [&::-webkit-slider-thumb]:appearance-none
+                    [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
+                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-violet-400
+                    [&::-webkit-slider-thumb]:hover:bg-violet-300 [&::-webkit-slider-thumb]:transition-colors
+                    ${isProcessing ? 'opacity-50' : ''}
+                  `}
+                />
+                <span className="text-xs font-mono text-stone-600 w-10 text-right">
+                  {Math.round(params.creativity * 100)}%
+                </span>
+              </div>
+            )}
+
+            {/* SeedVR2 info badge */}
+            {health?.model_type?.startsWith('seedvr2') && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <span className="text-xs text-emerald-400">SeedVR2 · Faithful upscaling</span>
+              </div>
+            )}
 
             {/* Upscale / Cancel Button */}
             {isProcessing ? (
