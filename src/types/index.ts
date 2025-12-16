@@ -35,3 +35,19 @@ export interface ImageData {
   dimensions?: { width: number; height: number };
 }
 
+export interface ModelInfo {
+  name: string;
+  filename: string;
+  size_gb: number;
+  downloaded: boolean;
+  required: boolean;
+  recommended?: boolean;
+}
+
+export interface ModelsResponse {
+  vae: ModelInfo;
+  "3b": ModelInfo;
+  "7b": ModelInfo;
+  current: string | null; // "3b" | "7b" | null
+}
+

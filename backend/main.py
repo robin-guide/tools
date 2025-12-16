@@ -41,6 +41,7 @@ ml_state = {
     "loading": False,
     "error": None,
     "seedvr2_available": False,
+    "preferred_model": None,  # "3b" or "7b" - user preference
 }
 
 
@@ -70,6 +71,48 @@ def check_seedvr2_models() -> Tuple[bool, Optional[str]]:
     return False, None
 
 
+def get_available_models() -> dict:
+    """Get list of all available models and their download status."""
+    vae_model = SEEDVR2_MODELS_DIR / "ema_vae_fp16.safetensors"
+    vae_downloaded = vae_model.exists()
+    
+    models = {
+        "vae": {
+            "name": "VAE",
+            "filename": "ema_vae_fp16.safetensors",
+            "size_gb": 0.478,
+            "downloaded": vae_downloaded,
+            "required": True,
+        },
+        "3b": {
+            "name": "SeedVR2 3B",
+            "filename": "seedvr2_ema_3b_fp16.safetensors",
+            "size_gb": 6.3,
+            "downloaded": (SEEDVR2_MODELS_DIR / "seedvr2_ema_3b_fp16.safetensors").exists(),
+            "required": False,
+            "recommended": True,
+        },
+        "7b": {
+            "name": "SeedVR2 7B",
+            "filename": "seedvr2_ema_7b_fp16.safetensors",
+            "size_gb": 15.0,
+            "downloaded": (SEEDVR2_MODELS_DIR / "seedvr2_ema_7b_fp16.safetensors").exists(),
+            "required": False,
+        }
+    }
+    
+    # Determine which model can be used
+    current_model = None
+    if models["3b"]["downloaded"] and vae_downloaded:
+        current_model = "3b"
+    if models["7b"]["downloaded"] and vae_downloaded:
+        current_model = "7b"  # Prefer 7B if both available
+    
+    models["current"] = current_model
+    
+    return models
+
+
 def load_ml_model():
     """Load an ML upscaling model."""
     global ml_state
@@ -90,10 +133,22 @@ def load_ml_model():
         ml_state["seedvr2_available"] = seedvr2_available
         
         if seedvr2_available:
-            ml_state["pipeline_type"] = seedvr2_type
+            # Check if user wants a specific model
+            preferred_model = ml_state.get("preferred_model")  # "3b" or "7b"
+            if preferred_model:
+                preferred_dit = SEEDVR2_MODELS_DIR / f"seedvr2_ema_{preferred_model}_fp16.safetensors"
+                if preferred_dit.exists():
+                    ml_state["pipeline_type"] = f"seedvr2_{preferred_model}"
+                else:
+                    # Preferred model not available, use what we have
+                    ml_state["pipeline_type"] = seedvr2_type
+            else:
+                ml_state["pipeline_type"] = seedvr2_type
+            
             ml_state["available"] = True
             ml_state["error"] = None
-            logger.info(f"✓ SeedVR2 {seedvr2_type.split('_')[1].upper()} FP16 ready!")
+            model_size = ml_state["pipeline_type"].split('_')[1].upper()
+            logger.info(f"✓ SeedVR2 {model_size} FP16 ready!")
             ml_state["loading"] = False
             return
         
@@ -251,8 +306,13 @@ async def upscale_with_seedvr2(
         cli_path = SEEDVR2_DIR / "inference_cli.py"
         dit_model = "seedvr2_ema_3b_fp16.safetensors"
         
-        # Check for 7B model
-        if (SEEDVR2_MODELS_DIR / "seedvr2_ema_7b_fp16.safetensors").exists():
+        # Check for preferred model, or use largest available
+        preferred_model = ml_state.get("preferred_model")
+        if preferred_model:
+            preferred_dit = SEEDVR2_MODELS_DIR / f"seedvr2_ema_{preferred_model}_fp16.safetensors"
+            if preferred_dit.exists():
+                dit_model = f"seedvr2_ema_{preferred_model}_fp16.safetensors"
+        elif (SEEDVR2_MODELS_DIR / "seedvr2_ema_7b_fp16.safetensors").exists():
             dit_model = "seedvr2_ema_7b_fp16.safetensors"
         
         cmd = [
@@ -432,6 +492,12 @@ async def health_check():
     )
 
 
+@app.get("/models")
+async def list_models():
+    """Get list of available models and their download status."""
+    return get_available_models()
+
+
 @app.post("/load-model")
 async def trigger_model_load():
     """Manually trigger model loading."""
@@ -445,6 +511,41 @@ async def trigger_model_load():
     thread.start()
     
     return {"status": "started", "message": "Model loading started"}
+
+
+@app.post("/switch-model")
+async def switch_model(model_size: str = "3b"):
+    """
+    Switch to a different model.
+    
+    Args:
+        model_size: "3b" or "7b"
+    """
+    if model_size not in ["3b", "7b"]:
+        return {"status": "error", "message": "Invalid model size. Use '3b' or '7b'"}
+    
+    # Check if model exists
+    dit_path = SEEDVR2_MODELS_DIR / f"seedvr2_ema_{model_size}_fp16.safetensors"
+    vae_path = SEEDVR2_MODELS_DIR / "ema_vae_fp16.safetensors"
+    
+    if not dit_path.exists() or not vae_path.exists():
+        return {
+            "status": "error",
+            "message": f"Model {model_size.upper()} not downloaded. Please download it first."
+        }
+    
+    # Set preferred model and reload
+    ml_state["preferred_model"] = model_size
+    ml_state["available"] = False  # Force reload
+    
+    import threading
+    thread = threading.Thread(target=load_ml_model)
+    thread.start()
+    
+    return {
+        "status": "switching",
+        "message": f"Switching to {model_size.upper()} model..."
+    }
 
 
 @app.post("/download-models")

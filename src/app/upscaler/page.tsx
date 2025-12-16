@@ -6,7 +6,7 @@ import Link from 'next/link';
 import ImageViewer from '@/components/ImageViewer';
 import SetupGuide from '@/components/SetupGuide';
 import { useUpscaler } from '@/hooks/useUpscaler';
-import { ImageData, UpscaleParams, HealthResponse } from '@/types';
+import { ImageData, UpscaleParams, HealthResponse, ModelsResponse } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -21,6 +21,7 @@ export default function UpscalerPage() {
     colorCorrection: 'none', // 'none' (fast), 'wavelet' (high), 'lab' (best)
   });
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [models, setModels] = useState<ModelsResponse | null>(null);
   const [showSetup, setShowSetup] = useState(true);
   const [initialCheckDone, setInitialCheckDone] = useState(false);
   
@@ -28,19 +29,46 @@ export default function UpscalerPage() {
 
   // Initial backend check
   useEffect(() => {
-    checkHealth().then((h) => {
+    const fetchData = async () => {
+      const h = await checkHealth();
       setHealth(h);
-      // If backend is connected and model is loaded, skip setup
+      
       if (h?.status === 'healthy') {
         setShowSetup(false);
+        // Fetch models list
+        try {
+          const res = await fetch(`${API_URL}/models`);
+          if (res.ok) {
+            const data = await res.json();
+            setModels(data);
+          }
+        } catch {
+          // Ignore errors
+        }
       }
       setInitialCheckDone(true);
-    });
+    };
+    
+    fetchData();
   }, [checkHealth]);
 
-  // Poll health status when not in setup mode
+  // Poll health status and models when not in setup mode
   useEffect(() => {
     if (showSetup) return;
+    
+    const fetchModels = async () => {
+      try {
+        const res = await fetch(`${API_URL}/models`);
+        if (res.ok) {
+          const data = await res.json();
+          setModels(data);
+        }
+      } catch {
+        // Ignore errors
+      }
+    };
+    
+    fetchModels();
     
     const interval = setInterval(() => {
       checkHealth().then((newHealth) => {
@@ -50,6 +78,7 @@ export default function UpscalerPage() {
           setShowSetup(true);
         }
       });
+      fetchModels();
     }, 5000);
     
     return () => clearInterval(interval);
@@ -239,6 +268,92 @@ export default function UpscalerPage() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Models Status Panel - Collapsible */}
+        {models && health?.status === 'healthy' && health.model_loaded && (
+          <motion.details
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 rounded-xl bg-stone-900/30 border border-stone-800/50"
+          >
+            <summary className="cursor-pointer list-none flex items-center justify-between">
+              <h3 className="text-sm font-medium text-stone-300">Available Models</h3>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-stone-500">
+                  {models.current ? `Active: ${models.current.toUpperCase()}` : 'No model active'}
+                </span>
+                <svg className="w-4 h-4 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </summary>
+            <div className="mt-4 pt-4 border-t border-stone-800/50">
+            <div className="space-y-2">
+              {(['vae', '3b', '7b'] as const).map((key) => {
+                const model = models[key];
+                if (!model) return null;
+                
+                return (
+                  <div
+                    key={key}
+                    className={`flex items-center justify-between p-2 rounded-lg ${
+                      model.downloaded 
+                        ? key === models.current 
+                          ? 'bg-emerald-500/10 border border-emerald-500/20'
+                          : 'bg-stone-800/30'
+                        : 'bg-stone-900/30 opacity-60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-2 h-2 rounded-full ${
+                        model.downloaded ? 'bg-emerald-500' : 'bg-stone-600'
+                      }`} />
+                      <div>
+                        <div className="text-sm text-stone-300">
+                          {model.name}
+                          {model.recommended && (
+                            <span className="ml-2 text-xs text-stone-500">(recommended)</span>
+                          )}
+                        </div>
+                        <div className="text-xs text-stone-500">
+                          {model.size_gb}GB {model.required && '(required)'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {model.downloaded ? (
+                        <span className="text-xs text-emerald-400">✓ Downloaded</span>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            if (key === 'vae') return;
+                            try {
+                              const res = await fetch(`${API_URL}/download-models?model_size=${key}`, { method: 'POST' });
+                              const data = await res.json();
+                              if (data.status === 'success') {
+                                // Refresh models list
+                                const modelsRes = await fetch(`${API_URL}/models`);
+                                if (modelsRes.ok) {
+                                  setModels(await modelsRes.json());
+                                }
+                                setTimeout(() => checkHealth().then(setHealth), 2000);
+                              }
+                            } catch (e) {
+                              console.error('Download failed:', e);
+                            }
+                          }}
+                          className="px-3 py-1 rounded text-xs bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30 transition-colors"
+                        >
+                          Download
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.details>
+        )}
 
         {/* ML Not Available Warning */}
         <AnimatePresence>
@@ -458,13 +573,71 @@ export default function UpscalerPage() {
               </div>
             )}
 
+            {/* Model Selector - only show for SeedVR2 */}
+            {health?.model_type?.startsWith('seedvr2') && models && (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-stone-500 whitespace-nowrap">Model</span>
+                <div className="flex gap-1">
+                  {(['3b', '7b'] as const).map((modelSize) => {
+                    const model = models[modelSize];
+                    const isCurrent = models.current === modelSize;
+                    const isDownloaded = model.downloaded;
+                    
+                    return (
+                      <button
+                        key={modelSize}
+                        onClick={async () => {
+                          if (!isDownloaded) return;
+                          try {
+                            const res = await fetch(`${API_URL}/switch-model?model_size=${modelSize}`, { method: 'POST' });
+                            const data = await res.json();
+                            if (data.status === 'switching') {
+                              // Reload health after a moment
+                              setTimeout(() => checkHealth().then(setHealth), 2000);
+                            }
+                          } catch (e) {
+                            console.error('Failed to switch model:', e);
+                          }
+                        }}
+                        disabled={isProcessing || !isDownloaded}
+                        className={`
+                          px-3 py-1.5 rounded-lg text-sm transition-all relative group
+                          ${isCurrent
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                            : isDownloaded
+                              ? 'bg-stone-800/50 text-stone-500 border border-stone-800 hover:border-stone-700 hover:text-stone-400'
+                              : 'bg-stone-900/30 text-stone-600 border border-stone-900/50 opacity-50 cursor-not-allowed'
+                          }
+                          ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}
+                        `}
+                        title={
+                          !isDownloaded 
+                            ? `Not downloaded (${model.size_gb}GB)` 
+                            : isCurrent 
+                              ? `Currently active` 
+                              : `Switch to ${model.name}`
+                        }
+                      >
+                        {modelSize.toUpperCase()}
+                        {model.recommended && !isCurrent && (
+                          <span className="ml-1 text-[10px] text-stone-600">★</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* SeedVR2 info badge */}
             {health?.model_type?.startsWith('seedvr2') && (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                 <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
-                <span className="text-xs text-emerald-400">SeedVR2 7B</span>
+                <span className="text-xs text-emerald-400">
+                  SeedVR2 {health.model_type.split('_')[1]?.toUpperCase() || ''}
+                </span>
               </div>
             )}
 
