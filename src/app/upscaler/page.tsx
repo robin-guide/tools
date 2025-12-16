@@ -18,6 +18,7 @@ export default function UpscalerPage() {
     denoise: 0,      // latent_noise_scale - 0 for faithful reproduction
     creativity: 0,   // not used by SeedVR2
     useMl: true,
+    colorCorrection: 'none', // 'none' (fast), 'wavelet' (high), 'lab' (best)
   });
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [showSetup, setShowSetup] = useState(true);
@@ -194,6 +195,32 @@ export default function UpscalerPage() {
           </div>
         </motion.header>
 
+        {/* Best Quality Warning */}
+        <AnimatePresence>
+          {params.colorCorrection === 'lab' && health?.model_type?.startsWith('seedvr2') && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mb-6 p-4 rounded-xl bg-blue-500/10 border border-blue-500/30"
+            >
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-medium text-blue-400">Best Quality Selected</h3>
+                  <p className="text-xs text-blue-400/70 mt-1">
+                    Maximum quality color correction is enabled. This will take approximately 16 minutes but produces the highest quality results.
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* ML Not Available Warning */}
         <AnimatePresence>
           {health?.status === 'healthy' && !health.model_loaded && !health.model_loading && (
@@ -342,13 +369,47 @@ export default function UpscalerPage() {
               </div>
             )}
 
+            {/* Quality Preset - only show for SeedVR2 */}
+            {health?.model_type?.startsWith('seedvr2') && (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-stone-500 whitespace-nowrap">Quality</span>
+                <div className="flex gap-1">
+                  {[
+                    { label: 'Fast', value: 'none', desc: '~30s' },
+                    { label: 'High', value: 'wavelet', desc: '~2min' },
+                    { label: 'Best', value: 'lab', desc: '~16min' },
+                  ].map((preset) => (
+                    <button
+                      key={preset.value}
+                      onClick={() => setParams({ ...params, colorCorrection: preset.value })}
+                      disabled={isProcessing}
+                      className={`
+                        px-3 py-1.5 rounded-lg text-sm transition-all relative group
+                        ${params.colorCorrection === preset.value
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                          : 'bg-stone-800/50 text-stone-500 border border-stone-800 hover:border-stone-700 hover:text-stone-400'
+                        }
+                        ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}
+                      `}
+                      title={`${preset.desc} - ${preset.label === 'Fast' ? 'No color correction' : preset.label === 'High' ? 'Balanced quality' : 'Maximum quality with perceptual color matching'}`}
+                    >
+                      {preset.label}
+                      <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[10px] text-stone-600 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                        {preset.desc}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* SeedVR2 info badge */}
             {health?.model_type?.startsWith('seedvr2') && (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                 <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
-                <span className="text-xs text-emerald-400">SeedVR2 · Faithful upscaling</span>
+                <span className="text-xs text-emerald-400">SeedVR2 7B</span>
               </div>
             )}
 

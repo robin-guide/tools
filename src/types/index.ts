@@ -3,6 +3,7 @@ export interface UpscaleParams {
   denoise: number;
   creativity: number;
   useMl: boolean;
+  colorCorrection?: string; // 'none' | 'lab' | 'wavelet' for SeedVR2
 }
 
 export interface UpscaleResponse {

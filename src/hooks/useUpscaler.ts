@@ -57,6 +57,9 @@ export function useUpscaler() {
       formData.append('denoise', params.denoise.toString());
       formData.append('creativity', params.creativity.toString());
       formData.append('use_ml', params.useMl.toString());
+      if (params.colorCorrection) {
+        formData.append('color_correction', params.colorCorrection);
+      }
 
       // Use the streaming endpoint
       const res = await fetch(`${API_URL}/upscale/stream`, {
