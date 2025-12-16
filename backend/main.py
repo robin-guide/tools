@@ -281,9 +281,9 @@ async def upscale_with_seedvr2(
             stderr=asyncio.subprocess.STDOUT,
         )
         
-        # Parse progress from output
+        # Parse progress from output and capture errors
         current_phase = 0
-        phase_names = ["Loading", "Encoding", "Upscaling", "Decoding"]
+        output_lines = []
         
         while True:
             line = await process.stdout.readline()
@@ -291,29 +291,47 @@ async def upscale_with_seedvr2(
                 break
             
             line_str = line.decode('utf-8', errors='ignore').strip()
-            
-            # Parse phase progress
-            if "Phase 1" in line_str:
-                current_phase = 1
-                if progress_callback:
-                    progress_callback(1, 4, None, "VAE Encoding...")
-            elif "Phase 2" in line_str:
-                current_phase = 2
-                if progress_callback:
-                    progress_callback(2, 4, None, "AI Upscaling...")
-            elif "Phase 3" in line_str:
-                current_phase = 3
-                if progress_callback:
-                    progress_callback(3, 4, None, "VAE Decoding...")
-            elif "Phase 4" in line_str or "completed" in line_str.lower():
-                current_phase = 4
-                if progress_callback:
-                    progress_callback(4, 4, None, "Finalizing...")
+            if line_str:
+                output_lines.append(line_str)
+                
+                # Log errors for debugging
+                if any(keyword in line_str.lower() for keyword in ['error', 'failed', 'oom', 'memory', 'kill', 'allocation']):
+                    logger.warning(f"SeedVR2: {line_str}")
+                
+                # Parse phase progress
+                if "Phase 1" in line_str:
+                    current_phase = 1
+                    if progress_callback:
+                        progress_callback(1, 4, None, "VAE Encoding...")
+                elif "Phase 2" in line_str:
+                    current_phase = 2
+                    if progress_callback:
+                        progress_callback(2, 4, None, "AI Upscaling...")
+                elif "Phase 3" in line_str:
+                    current_phase = 3
+                    if progress_callback:
+                        progress_callback(3, 4, None, "VAE Decoding...")
+                elif "Phase 4" in line_str or "completed" in line_str.lower():
+                    current_phase = 4
+                    if progress_callback:
+                        progress_callback(4, 4, None, "Finalizing...")
         
         await process.wait()
         
         if process.returncode != 0:
-            raise RuntimeError(f"SeedVR2 failed with exit code {process.returncode}")
+            error_msg = f"SeedVR2 failed with exit code {process.returncode}"
+            # Try to extract useful error from output
+            for line in reversed(output_lines[-20:]):  # Last 20 lines, reverse order
+                line_lower = line.lower()
+                if any(keyword in line_lower for keyword in ['memory', 'oom', 'allocation', 'vram', 'out of memory']):
+                    error_msg += f": Memory limit exceeded. Try 2x or 3x scale, or use 'High' quality instead of 'Best'."
+                    break
+                elif any(keyword in line_lower for keyword in ['error', 'failed', 'exception']):
+                    # Extract just the error message, not full traceback
+                    if ':' in line and len(line) < 200:
+                        error_msg += f": {line}"
+                    break
+            raise RuntimeError(error_msg)
         
         # Load result
         if not os.path.exists(output_path):
